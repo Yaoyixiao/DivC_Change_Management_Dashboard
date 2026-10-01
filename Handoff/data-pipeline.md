@@ -106,8 +106,8 @@ ECR（根，ID 来自配置）
 items(
   id INTEGER PRIMARY KEY,      -- PTC Item ID（四类实体共用一张表）
   kind TEXT NOT NULL,          -- 'ecr' | 'work_item' | 'action' | 'build'（config.KINDS）
-  level INTEGER,               -- 仅 work_item：距 ECR 的 hop 数 0/1/2；其余 kind 为 NULL
-  process_area TEXT,           -- 仅 work_item：从 Summary 抽取的 ASPICE 流程域（见 §5.5）；其余 kind 为空
+  level INTEGER,               -- work_item：距 ECR 的 hop 数 0/1/2；其余 kind 为 NULL
+  process_area TEXT,           -- work_item：Summary 抽取的 ASPICE 流程域（§5.5）；action：固定 Initial IA；ecr/build 为空
   ... 41 个字段列 TEXT         -- 由 Data_Field 动态生成：剥 ALM_ 前缀、小写、空格转下划线
 )
 edges(                          -- 显式关系边
@@ -131,7 +131,7 @@ metadata(key, value)            -- schema_version / generated_at / config_file /
 
 | Sheet | 内容 |
 |---|---|
-| `Items` | `ID, Kind, Level, Process Area` + 42 个字段的展示别名（剥 ALM_ 前缀）；别名以 `Date` 结尾的列写成真日期单元格；Process Area 仅 work_item 有值 |
+| `Items` | `ID, Kind, Level, Process Area` + 42 个字段的展示别名（剥 ALM_ 前缀）；别名以 `Date` 结尾的列写成真日期单元格；Process Area 规则见 §5.5 |
 | `ECR Tree` | **透视树**（2026-10-01 新增，见下方口径） |
 | `Edges` | `Parent ID, Child ID, Relation` |
 | `Metadata` | Export Time + 各 kind 计数 + 各 relation 计数 |
@@ -178,15 +178,22 @@ Dashboard 聚合时按边计数与按实体计数会不同，口径要想清楚�
 - 已用真实运行的全部 25 个 Team 唯一值逐一验证清洗结果（2026-10-01）
 
 **派生数据段 Process Area**（`fetcher._tag_process_areas`，在 items 组装后、writer 之前执行，
-`data_utils.extract_process_area`，按需求**仅 work_item**）：
+`data_utils.extract_process_area`）：
 
-- 从 `Summary` 抽取 ASPICE 流程域缩写（2-4 位大写字母 + 点号 + 1-2 位数字），
-  如 `MAN.3` / `SWE.3` / `SYS.1` / `SUP.8`
-- 容忍缩写与点号/数字之间的空格（实测有 `SWE. 3` 写法），输出归一化为 `SWE.3`
-- 多个命中取第一个（如 `MAN.3 plan SWE.1 extra` → `MAN.3`）；无命中留空
-- 词边界限定，长单词中部的点号不会误抽（`EEPROM.2` 不产生 `ROM.2`）
-- ECR / Action / Build 不抽取（ECR Summary 里出现 `SYS.5` 也不算）——若以后要扩展到其他 kind，
-  改 `fetcher._tag_process_areas` 的 kind 过滤即可，schema 无需变动
+- `work_item`：从 `Summary` 抽取，规则优先级：
+  1. **流程域缩写**：白名单（SYS/SWE/HWE/MAN/SUP/ACQ/PIM/SPL/ENG/SOO/VAL）+ 点号 + 1-2 位数字，
+     大小写不敏感并归一化为大写；容忍 `SWE. 3` 带空格；容忍 `Sys.4-5` 区间写法（取首数字 → `SYS.4`）；
+     数字后的 `_` 视为边界（`SWE.2_Software_Arch` → `SWE.2`），但排除后随数字/点（`SWE.123` 不截断匹配）；
+     长单词中部不误抽（`EEPROM.2` 不产生 `ROM.2`）；多命中取第一个
+  2. **关键词回退**（仅当未命中缩写，按需求顺序）：含 `System requirement` 或 `Sys Req` → `SYS.2`；
+     含独立词 `TSC` → `TSC`（需求原文写 'TCS'，按源词缩写处理，`config.PROCESS_AREA_TSC` 一处可改）；
+     含 `impact analysis` → `Detail IA`
+  3. 都不命中留空
+- `action`：**一律固定为 `Initial IA`**（不管 Summary 内容）
+- `ecr` / `build`：为空（ECR Summary 含 `SYS.5` 也不算）
+
+真实数据效果（2026-10-01）：129 条 work_item 可分类 120 条（93%）；24 条 action 全部 Initial IA；
+剩余 9 条无任何规则命中（STKHReq / SW domain task / S310 Release Report 等）。
 
 ## 6. 遍历与建边语义（改动前必读）
 
@@ -221,8 +228,9 @@ python src/selftest_fetch.py
 原理：monkeypatch `fetcher.export_issues`（写 xlsx 假导出）与 `fetcher.read_exported_excel`
 （经 BytesIO 按内容读——openpyxl 按扩展名拒读 `.xls` 命名的文件），并把 config 路径全部指到临时目录，
 然后跑真实 `fetcher.main()`。断言覆盖：共享 Work Item、三级递归与深度截断、不存在 ID 容错、
-回指不成环、ISO/Excel 序列数两种日期、Team 清洗（含整串剥空的边界）、Process Area 派生
-（带空格归一化 / 多命中取第一个 / 防误抽 / 仅 work_item）、四件套内容一致性、临时目录清理。
+回指不成环、ISO/Excel 序列数两种日期、Team 清洗（含整串剥空的边界）、Process Area 全规则
+（缩写形态 / 区间 / 下划线边界 / 防误抽 / 关键词回退及优先级 / action 固定 Initial IA）、
+四件套内容一致性、临时目录清理。
 
 **改遍历语义、schema 或 writer 后，先跑它再上真实环境。**
 

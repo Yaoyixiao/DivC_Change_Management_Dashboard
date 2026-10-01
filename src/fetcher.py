@@ -59,15 +59,20 @@ def _clean_rows(rows):
 
 
 def _tag_process_areas(items):
-    """为 work_item 行补派生数据段 Process Area（从 Summary 抽取 ASPICE 流程域缩写）。
+    """为 work_item / action 行补派生数据段 Process Area。
 
-    按需求该数据段仅用于 work_item 分类，其余 kind 不抽取（保持为空）。
+    - work_item：从 Summary 抽取 ASPICE 流程域（缩写优先，关键词回退，
+      见 data_utils.extract_process_area）
+    - action：按需求一律归类为 Initial IA
+    - 其余 kind（ecr / build）不赋值，保持为空
     """
     for kind, rows, _ in items:
-        if kind != config.KIND_WORK_ITEM:
-            continue
-        for row in rows:
-            row[config.ALIAS_PROCESS_AREA] = extract_process_area(row.get("Summary", ""))
+        if kind == config.KIND_WORK_ITEM:
+            for row in rows:
+                row[config.ALIAS_PROCESS_AREA] = extract_process_area(row.get("Summary", ""))
+        elif kind == config.KIND_ACTION:
+            for row in rows:
+                row[config.ALIAS_PROCESS_AREA] = config.PROCESS_AREA_INITIAL_IA
     return items
 
 

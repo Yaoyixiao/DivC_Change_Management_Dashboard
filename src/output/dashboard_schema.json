@@ -10,6 +10,7 @@
         "id": "integer",
         "kind": "text",
         "level": "integer",
+        "process_area": "text",
         "type": "text",
         "summary": "text",
         "state": "text",
@@ -38,6 +39,7 @@
         "overdue_first_build_date": "date",
         "affected_objects": "text",
         "planned_effort": "text",
+        "actual_effort": "text",
         "first_build_date": "date",
         "remaining_effort": "text",
         "change_request_for": "text",
@@ -78,5 +80,5 @@
     "actions",
     "work_item_for"
   ],
-  "generated_at": "2026-10-01T14:28:56+08:00"
+  "generated_at": "2026-10-01T16:52:49+08:00"
 }

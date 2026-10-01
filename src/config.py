@@ -40,8 +40,11 @@ ALIAS_WORK_ITEM_FOR = build_alias(FIELD_WORK_ITEM_FOR)  # "Work Item For"
 ALIAS_TEAM = build_alias("ALM_Team")                    # "Team"（导出时清洗，见 data_utils.clean_team）
 
 # 派生数据段（不在 Data_Field 字段表里，导出时计算）：ASPICE 流程域，
-# 仅 work_item 有值，从 Summary 抽取（见 data_utils.extract_process_area）
+# work_item 从 Summary 抽取（见 data_utils.extract_process_area），Action 固定为 Initial IA
 ALIAS_PROCESS_AREA = "Process Area"   # 行 dict 键 / Excel 列名；DB 列名 process_area
+PROCESS_AREA_INITIAL_IA = "Initial IA"
+PROCESS_AREA_DETAIL_IA = "Detail IA"
+PROCESS_AREA_TSC = "TSC"  # Summary 含独立词 TSC 时的归类值；需求原文写 'TCS'，按源词缩写处理，如需改这里
 
 # Work Item 递归深度：ECR 下最多 L0/L1/L2 三级（hop 数 0/1/2），L2 不再下钻
 WORK_ITEM_MAX_LEVEL = 2

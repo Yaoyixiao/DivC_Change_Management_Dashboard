@@ -18,8 +18,9 @@ SQLite / Excel / manifest / schema 的内容，最后自动清理。
 - 最深层回指上层节点（不产生环）
 - ISO 字符串日期与 Excel 序列数日期两种写法
 - Team 字段清洗：去开头 "(数字id)" / 结尾 "PR+项目号"（含 [PR...] 方括号形态、整串剥空的边界）
-- Process Area 派生列：从 work_item 的 Summary 抽取 ASPICE 流程域
-  （"SWE. 3" 带空格归一化、多命中取第一个、"EEPROM.2" 不误抽、仅 work_item 有值）
+- Process Area 派生列：work_item 从 Summary 抽取 ASPICE 流程域（白名单大小写归一、
+  "SWE. 3" 带空格、"Sys.4-5" 区间取首数字、下划线边界、"EEPROM.2" 不误抽、
+  Sys Req/TSC/Impact Analysis 关键词回退）；action 一律 "Initial IA"；ecr/build 为空
 """
 from __future__ import annotations
 
@@ -79,9 +80,9 @@ FAKE_ITEMS: dict[int, dict] = {
     210: {"ID": 210, "Type": "Work Item", "Summary": "WI 210 MAN.3 plan SWE.1 extra",
           "State": "ALM_Planned",
           "ALM_Planned Effort": "2", "ALM_Remaining Effort": "2", "ALM_Work Items": "220"},
-    220: {"ID": 220, "Type": "Work Item", "Summary": "WI 220 EEPROM.2 decoy",
+    220: {"ID": 220, "Type": "Work Item", "Summary": "WI 220 System requirement review",
           "State": "ALM_Initiated",
-          "ALM_Planned Effort": "3", "ALM_Work Items": "201, 230"},  # 已到 L2：不下钻；201 是回指
+          "ALM_Planned Effort": "3", "ALM_Work Items": "201, 230"},  # 无缩写 -> 关键词回退 SYS.2
     230: {"ID": 230, "Type": "Work Item", "Summary": "WI 230", "State": "ALM_Initiated",
           "ALM_Planned Effort": "9"},  # 存在但超出深度，不应被导出/计数
     301: {"ID": 301, "Type": "Action", "Summary": "Action 301", "State": "ALM_Checked",
@@ -229,12 +230,15 @@ def assert_database(tmp_path: Path) -> None:
 
         areas = dict(cur.execute(
             "SELECT id, process_area FROM items WHERE kind = 'work_item'").fetchall())
-        assert areas == {201: "SYS.2", 202: "SWE.3", 210: "MAN.3", 220: ""}, areas
-        # 202 带空格的 "SWE. 3" 归一化；210 多命中取第一个；220 的 EEPROM.2 不误抽
-        tagged_non_wi = cur.execute(
-            "SELECT COUNT(*) FROM items WHERE kind != 'work_item' AND process_area != ''"
+        assert areas == {201: "SYS.2", 202: "SWE.3", 210: "MAN.3", 220: "SYS.2"}, areas
+        # 202 带空格 "SWE. 3" 归一化；210 多命中取第一个；220 无缩写走 Sys Req 关键词回退
+        actions = dict(cur.execute(
+            "SELECT id, process_area FROM items WHERE kind = 'action'").fetchall())
+        assert actions == {301: config.PROCESS_AREA_INITIAL_IA, 302: config.PROCESS_AREA_INITIAL_IA}, actions
+        untagged = cur.execute(
+            "SELECT COUNT(*) FROM items WHERE kind IN ('ecr', 'build') AND process_area != ''"
         ).fetchone()[0]
-        assert tagged_non_wi == 0, "process_area 仅 work_item 应有值（ECR 101 的 SYS.5 不算）"
+        assert untagged == 0, "ecr / build 不应有 process_area（ECR 101 的 SYS.5 不算）"
 
         columns = [row[1] for row in cur.execute("PRAGMA table_info(items)").fetchall()]
         assert "planned_start_date" in columns and "maturity_level" in columns, columns
@@ -263,6 +267,7 @@ def assert_excel(tmp_path: Path) -> None:
     assert by_id[101][headers.index("Team")] == "Software Integration", by_id[101]
     pa_col = headers.index("Process Area")
     assert by_id[201][pa_col] == "SYS.2" and by_id[202][pa_col] == "SWE.3", (by_id[201][pa_col], by_id[202][pa_col])
+    assert by_id[301][pa_col] == config.PROCESS_AREA_INITIAL_IA and by_id[220][pa_col] == "SYS.2"
     assert by_id[101][pa_col] in ("", None), by_id[101][pa_col]  # ECR 不抽 Process Area
 
     ws_edges = wb["Edges"]
@@ -360,6 +365,36 @@ def assert_config_variants(tmp_path: Path) -> None:
         raise AssertionError("Pivot 里的未知字段应触发 ValueError")
 
 
+def assert_process_area_rules() -> None:
+    """extract_process_area 纯函数规则：缩写形态 / 关键词回退 / 防误抽（用真实数据出现的形态）。"""
+    from data_utils import extract_process_area as epa
+
+    # 缩写形态
+    assert epa("SYS.1") == "SYS.1"
+    assert epa("SWE. 3 software design") == "SWE.3"       # 点号后带空格
+    assert epa("Sys.4-5|Full regression test") == "SYS.4"  # 大小写混排 + 区间取首数字
+    assert epa("SWE.2_Software_Arch_Design") == "SWE.2"    # 下划线分隔符视为边界
+    assert epa("MAN.3 plan SWE.1 extra") == "MAN.3"        # 多命中取第一个
+    assert epa("SYS.10 x") == "SYS.10"                     # 两位数字
+    assert epa("sup.8 review") == "SUP.8"                  # 小写归一化为大写
+    # 防误抽
+    assert epa("EEPROM.2 decoy") == ""                     # 长单词中部不误抽
+    assert epa("No.5 issue") == ""                         # 非流程域词
+    assert epa("SYST_Build_AutoX_SBW") == ""               # 前缀后无点号数字
+    assert epa("SWE.123") == ""                            # 非法位数不截断匹配
+    # 关键词回退（仅当未命中缩写，按需求顺序 Sys Req > TSC > Impact Analysis）
+    assert epa("[Sys Reqs Update] Update X") == "SYS.2"
+    assert epa("System requirements monthly sprint") == "SYS.2"
+    assert epa("System requirement review") == "SYS.2"
+    assert epa("[TSC Update] 12_CommunicateVehicleBus") == "TSC"
+    assert epa("WP_Requirement Impact Analysis_PP") == "Detail IA"
+    assert epa("no rules here") == ""
+    # 缩写优先于关键词
+    assert epa("SYS.1 update System requirement") == "SYS.1"
+    assert epa("TSC impact analysis") == "TSC"
+    assert epa("System requirement TSC") == "SYS.2"
+
+
 def assert_json(tmp_path: Path) -> None:
     manifest = json.loads((tmp_path / "dashboard_manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "ready"
@@ -386,6 +421,7 @@ def main() -> int:
         assert_excel(tmp_path)
         assert_json(tmp_path)
         assert_config_variants(tmp_path)
+        assert_process_area_rules()
         assert not (tmp_path / ".tmp_exportissues").exists(), "临时导出目录未清理"
     print("selftest_fetch: PASS (db / xlsx / tree / manifest / schema / config)")
     return 0

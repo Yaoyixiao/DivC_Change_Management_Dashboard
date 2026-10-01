@@ -51,22 +51,42 @@ def clean_team(value: Any) -> str:
 
 # ---------- 派生数据段：Process Area（ASPICE 流程域） ----------
 
-# ASPICE 流程域缩写：2-4 个大写字母 + 点号 + 1-2 位数字（如 MAN.3 / SWE.3 / SYS.1 / SUP.8）。
-# 缩写与点号/数字之间允许有空格（实测 Summary 里有 "SWE. 3" 写法），输出前归一化掉。
-# 词边界限定：避免从长单词中部误抽（如 "EEPROM.2" 不会抽出 "ROM.2"）。
-_PROCESS_AREA_RE = re.compile(r"\b([A-Z]{2,4})\s*\.\s*(\d{1,2})\b")
+# ASPICE 流程域白名单（v3.1/v4.0 常用组），大小写不敏感，输出统一大写。
+# 缩写与点号/数字之间允许有空格（实测有 "SWE. 3"）；允许 "Sys.4-5" 区间写法（取首数字）；
+# 数字后用前瞻排除"数字或点"——既防 "SWE.123" 截断，又把 "_" 当边界
+# （实测 "SWE.2_Software_Arch..." 形态），并防从长单词中部误抽（"EEPROM.2" 不产生 "ROM.2"）。
+_PROCESS_AREAS = ("SYS", "SWE", "HWE", "MAN", "SUP", "ACQ", "PIM", "SPL", "ENG", "SOO", "VAL")
+_PROCESS_AREA_RE = re.compile(
+    r"\b(" + "|".join(_PROCESS_AREAS) + r")\s*\.\s*(\d{1,2})(?:\s*[-–~]\s*\d{1,2})?(?![\d.])",
+    re.IGNORECASE,
+)
 
 
 def extract_process_area(value: Any) -> str:
-    """从 Summary 文本抽取 ASPICE 流程域缩写，如 "MAN.3" / "SWE.3" / "SYS.1"。
+    """从 Summary 抽取 ASPICE 流程域缩写，如 "MAN.3" / "SWE.3" / "SYS.1"。
 
-    - 容忍 "SWE. 3" 这类带空格的写法，输出统一为无空格的 "SWE.3"
-    - 多个命中取第一个；无命中返回空串
+    抽取规则（优先级从高到低）：
+    1. 流程域缩写：白名单内 + 点号 + 数字，大小写不敏感并归一化为大写；
+       容忍 "SWE. 3" 空格与 "Sys.4-5" 区间（取首数字，Sys.4-5 -> SYS.4）
+    2. 关键词回退（仅当未命中缩写，按需求给的顺序）：
+       - 含 "System requirement" 或 "Sys Req" -> "SYS.2"
+       - 含独立词 "TSC" -> "TSC"（需求原文写 'TCS'，按源词缩写处理，config.PROCESS_AREA_TSC 可改）
+       - 含 "impact analysis" -> "Detail IA"
+    3. 都不命中返回空串
     """
-    match = _PROCESS_AREA_RE.search(str(value or ""))
-    if match is None:
-        return ""
-    return f"{match.group(1)}.{match.group(2)}"
+    text = str(value or "")
+    match = _PROCESS_AREA_RE.search(text)
+    if match is not None:
+        return f"{match.group(1).upper()}.{match.group(2)}"
+
+    lowered = text.lower()
+    if "system requirement" in lowered or "sys req" in lowered:
+        return "SYS.2"
+    if re.search(r"\btsc\b", lowered):
+        return "TSC"
+    if "impact analysis" in lowered:
+        return "Detail IA"
+    return ""
 
 _TEXT_DATE_FORMATS = (
     "%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y",
