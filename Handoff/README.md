@@ -2,6 +2,11 @@
 
 > 单文件自包含 HTML dashboard，把 `src/output/dashboard.db`（PTC Integrity / Windchill RV&S 导出）的 5 层 ALM 数据转成可视化看板。
 
+> **⚠️ 状态更新（2026-10-01）**：取数链路已从 RA-OP 结构改造为 **ECR 层级结构**（ECR → Work Item 三级 / Action / Build），
+> 配置改为读取 `src/ECR_Config.xlsx`，DB schema 变为通用节点表（items + edges）。
+> 取数链路以 [data-pipeline.md](data-pipeline.md) 为唯一权威文档；本文件夹其余文档描述的 dashboard
+> 渲染链路仍基于旧 RA-OP schema，**与当前 dashboard.db 不兼容，待 phase 2 适配**，其中的 UI/模块/测试思路仍可参考。
+
 ## 1. 一句话命令
 
 ```bash
@@ -45,7 +50,8 @@ python src/generate_dashboard.py --open
 
 | 文件 | 内容 |
 |---|---|
-| [architecture.md](architecture.md) | 数据流 / 模块依赖图 / 关键设计决策 |
+| [data-pipeline.md](data-pipeline.md) | **取数链路（ECR 层级，2026-10-01 起权威）**：数据流 / 配置契约 / DB schema / 遍历语义 / 自测与扩展点 |
+| [architecture.md](architecture.md) | 数据流 / 模块依赖图 / 关键设计决策（dashboard 渲染链路，schema 部分已过时） |
 | [file-map.md](file-map.md) | 每个文件的职责 + 关键函数清单 |
 | [workflow.md](workflow.md) | 重新生成 / 浏览器手测 / Node 单元测试 / 自检脚本 |
 | [data-contract.md](data-contract.md) | `__PAYLOAD__` 结构 / aggregation 输出契约 |

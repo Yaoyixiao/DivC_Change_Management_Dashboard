@@ -41,6 +41,10 @@ ALIAS_WORK_ITEM_FOR = build_alias(FIELD_WORK_ITEM_FOR)  # "Work Item For"
 # Work Item 递归深度：ECR 下最多 L0/L1/L2 三级（hop 数 0/1/2），L2 不再下钻
 WORK_ITEM_MAX_LEVEL = 2
 
+# Excel 透视树（ECR Tree sheet）的缺省汇总字段；
+# 可在 ECR_Config.xlsx 的 'Pivot' sheet 里覆盖为任意 Data_Field 已有字段
+DEFAULT_PIVOT_FIELD = "ALM_Planned Effort"
+
 # PyInstaller onefile 下 __file__ 指向临时解压目录（退出即删），frozen 时以 exe 所在目录为基准
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parent

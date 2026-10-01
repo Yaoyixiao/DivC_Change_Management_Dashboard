@@ -1,6 +1,7 @@
-"""从 ECR_Config.xlsx 读取导出配置：根 ECR ID（'ECR' sheet）与字段表（'Data_Field' sheet）。
+"""从 ECR_Config.xlsx 读取导出配置：根 ECR ID（'ECR' sheet）、字段表（'Data_Field' sheet）、
+可选的透视汇总字段（'Pivot' sheet）。
 
-两个 sheet 均为单列、首行表头（"ID" / "Field"）。字段表必须包含遍历所需的
+'ECR' 与 'Data_Field' 均为单列、首行表头（"ID" / "Field"）。字段表必须包含遍历所需的
 全部关系字段，否则取数链路无法工作，加载时即报错。
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ import config
 
 ECR_SHEET = "ECR"
 FIELD_SHEET = "Data_Field"
+PIVOT_SHEET = "Pivot"
 ID_HEADER = "ID"
 FIELD_HEADER = "Field"
 
@@ -31,6 +33,9 @@ REQUIRED_FIELDS = (
 class EcrConfig:
     root_ids: list[int]
     fields: list[str]
+    # Excel 透视树要 sum 的原始字段名；来自可选的 'Pivot' sheet，
+    # 没有 Pivot sheet 时缺省为 config.DEFAULT_PIVOT_FIELD（若在字段表里）
+    pivot_fields: list[str]
 
 
 def load_ecr_config(path: str | Path = config.ECR_CONFIG_PATH) -> EcrConfig:
@@ -45,6 +50,7 @@ def load_ecr_config(path: str | Path = config.ECR_CONFIG_PATH) -> EcrConfig:
     try:
         root_ids = _read_single_column(workbook, ECR_SHEET, ID_HEADER, _to_int)
         fields = _read_single_column(workbook, FIELD_SHEET, FIELD_HEADER, str)
+        pivot_fields = _read_pivot_fields(workbook, fields)
     finally:
         workbook.close()
 
@@ -58,7 +64,26 @@ def load_ecr_config(path: str | Path = config.ECR_CONFIG_PATH) -> EcrConfig:
         raise ValueError(
             f"配置文件 {path.name} 的 '{FIELD_SHEET}' sheet 缺少必需字段: {missing}"
         )
-    return EcrConfig(root_ids=root_ids, fields=fields)
+    return EcrConfig(root_ids=root_ids, fields=fields, pivot_fields=pivot_fields)
+
+
+def _read_pivot_fields(workbook: openpyxl.Workbook, fields: list[str]) -> list[str]:
+    """读取可选的 'Pivot' sheet（要 sum 的字段表）。
+
+    - sheet 不存在：缺省 config.DEFAULT_PIVOT_FIELD（需在字段表里，否则为空）。
+    - sheet 存在：每个字段必须出现在 Data_Field 字段表里，否则报错；去空去重保序。
+      空 sheet（只有表头）视为显式选择"不汇总"。
+    """
+    if PIVOT_SHEET not in workbook.sheetnames:
+        default = config.DEFAULT_PIVOT_FIELD
+        return [default] if default in fields else []
+    requested = _read_single_column(workbook, PIVOT_SHEET, FIELD_HEADER, str)
+    unknown = [name for name in requested if name not in fields]
+    if unknown:
+        raise ValueError(
+            f"配置文件 '{PIVOT_SHEET}' sheet 里的字段不在 '{FIELD_SHEET}' 字段表中: {unknown}"
+        )
+    return requested
 
 
 def _read_single_column(

@@ -14,6 +14,7 @@ python selftest_fetch.py     # 离线冒烟测试（假数据全链路，无需 
 |---|---|
 | `ECR` | `ID` 列 = 所有第一级要导出的 ECR Item |
 | `Data_Field` | `Field` 列 = 所有 item 统一要导出的字段（必须包含 `ID`、`ALM_Work Items`、`ALM_Actions`、`ALM_Work Item For`） |
+| `Pivot`（可选） | `Field` 列 = 透视树（ECR Tree）要 sum 的字段；缺 sheet 时缺省 `ALM_Planned Effort` |
 
 导出层级：
 
@@ -27,7 +28,7 @@ ECR（配置的根 ID）
 
 ## 输出
 
-- `output/data.xlsx`：人工核查（Items / Edges / Metadata 三个 sheet）
+- `output/data.xlsx`：人工核查（Items / ECR Tree / Edges / Metadata 四个 sheet；ECR Tree 为按层级 +/- 折叠的透视树，对 Pivot 配置的列做子树 sum）
 - `output/dashboard.db`：SQLite 数据源
 - `output/dashboard_manifest.json`：本次生成时间、配置文件名、各 kind 与关系计数
 - `output/dashboard_schema.json`：前端/后端可读取的数据契约
@@ -44,5 +45,6 @@ ECR（配置的根 ID）
 - **边只记录遍历方向的边**（父 → 本层新发现的子）：已见节点不重复导出也不产生边，天然无环。
 - 同一 Work Item 被多个父级引用时只导出一次，但每条引用各自成边。
 - 关联目标在 PTC 不存在时对应边被丢弃；根 ID 不存在时导出数少于配置数并记 warning。
+- **透视树（ECR Tree）**：Subtotal = 自身 + 全部后代；同一 ECR 子树内节点去重（多父级挂首条路径）；TOTAL = 各 ECR Subtotal 之和，共享节点会被计多次（列内一致性优先）。
 - CLI 日志仅用 ASCII 字符（Windows 控制台代码页兼容）。
 - 日期列判定：数据库列名以 `_date` 结尾（如 planned_start_date；`...Date Ref` 类字段不作日期处理）。

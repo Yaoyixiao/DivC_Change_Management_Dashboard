@@ -100,7 +100,9 @@ def main() -> None:
         logger.info("计数: %s", counts)
         logger.info("关系: %s", relationship_counts)
 
-        write_items_to_excel(config.OUTPUT_PATH, fields, items, relationships)
+        write_items_to_excel(
+            config.OUTPUT_PATH, fields, items, relationships, ecr_config.pivot_fields,
+        )
         write_dashboard_database(
             config.DATABASE_PATH, generated_at, config.SCHEMA_VERSION, fields,
             ecr_config.root_ids, Path(config.ECR_CONFIG_PATH).name, items, relationships,

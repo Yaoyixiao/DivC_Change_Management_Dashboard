@@ -44,31 +44,37 @@ ROOT_IDS = [101, 102, 103, 109]  # 109 在 PTC 不存在
 FIELDS = [
     "ID", "Type", "Summary", "State", "Created Date", "ALM_Owners",
     "ALM_Planned Start Date", "ALM_Target Date", "ALM_Maturity Level",
-    "ALM_Planned Effort", "ALM_Work Items", "ALM_Actions", "ALM_Work Item For",
+    "ALM_Planned Effort", "ALM_Remaining Effort",
+    "ALM_Work Items", "ALM_Actions", "ALM_Work Item For",
 ]
 
 # 模拟 im exportissues 的原始导出：键为原始字段名
 FAKE_ITEMS: dict[int, dict] = {
     101: {"ID": 101, "Type": "ECR", "Summary": "ECR 101", "State": "ALM_Defined",
           "Created Date": "2026-01-15", "ALM_Target Date": "2026-06-30",
+          "ALM_Planned Effort": "5",
           "ALM_Work Items": "201, 202", "ALM_Actions": "301", "ALM_Work Item For": "401"},
     102: {"ID": 102, "Type": "ECR", "Summary": "ECR 102", "State": "ALM_Initiated",
-          "Created Date": "2026-02-01",
+          "Created Date": "2026-02-01", "ALM_Planned Effort": "",
           "ALM_Work Items": "202, 203, 999",
           "ALM_Actions": "302, 399",
           "ALM_Work Item For": "402"},
     103: {"ID": 103, "Type": "ECR", "Summary": "ECR 103", "State": "ALM_Closed",
           "Created Date": "2026-02-10"},
     201: {"ID": 201, "Type": "Work Item", "Summary": "WI 201", "State": "ALM_Started",
-          "ALM_Planned Start Date": "2026-03-15", "ALM_Work Items": "210"},
+          "ALM_Planned Start Date": "2026-03-15", "ALM_Planned Effort": "4",
+          "ALM_Remaining Effort": "1", "ALM_Work Items": "210"},
     202: {"ID": 202, "Type": "Work Item", "Summary": "WI 202", "State": "ALM_Defined",
-          "ALM_Planned Start Date": 46000, "ALM_Work Items": "210"},
+          "ALM_Planned Start Date": 46000, "ALM_Planned Effort": "6",
+          "ALM_Work Items": "210"},
     210: {"ID": 210, "Type": "Work Item", "Summary": "WI 210", "State": "ALM_Planned",
-          "ALM_Work Items": "220"},
+          "ALM_Planned Effort": "2", "ALM_Remaining Effort": "2", "ALM_Work Items": "220"},
     220: {"ID": 220, "Type": "Work Item", "Summary": "WI 220", "State": "ALM_Initiated",
-          "ALM_Work Items": "201, 230"},  # 已到 L2：不下钻；201 是回指
-    230: {"ID": 230, "Type": "Work Item", "Summary": "WI 230", "State": "ALM_Initiated"},
-    301: {"ID": 301, "Type": "Action", "Summary": "Action 301", "State": "ALM_Checked"},
+          "ALM_Planned Effort": "3", "ALM_Work Items": "201, 230"},  # 已到 L2：不下钻；201 是回指
+    230: {"ID": 230, "Type": "Work Item", "Summary": "WI 230", "State": "ALM_Initiated",
+          "ALM_Planned Effort": "9"},  # 存在但超出深度，不应被导出/计数
+    301: {"ID": 301, "Type": "Action", "Summary": "Action 301", "State": "ALM_Checked",
+          "ALM_Planned Effort": "8"},
     302: {"ID": 302, "Type": "Action", "Summary": "Action 302", "State": "ALM_Closed"},
     401: {"ID": 401, "Type": "Build", "Summary": "Build 401", "ALM_Target Date": "2026-08-01",
           "ALM_Maturity Level": "CAT 3"},
@@ -106,7 +112,8 @@ def fake_export_issues(query_definition, fields, output_file) -> None:
     wb.save(output_file)
 
 
-def write_fake_config(path: Path) -> None:
+def write_fake_config(path: Path, pivot_fields: list[str] | None = None) -> None:
+    """默认写含两个 Effort 字段的 Pivot sheet；pivot_fields=None 时不写 Pivot sheet。"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "ECR"
@@ -117,6 +124,11 @@ def write_fake_config(path: Path) -> None:
     ws_fields.append(["Field"])
     for field in FIELDS:
         ws_fields.append([field])
+    if pivot_fields is not None:
+        ws_pivot = wb.create_sheet("Pivot")
+        ws_pivot.append(["Field"])
+        for field in pivot_fields:
+            ws_pivot.append([field])
     wb.save(path)
 
 
@@ -128,7 +140,7 @@ def fake_read_exported_excel(path):
 
 def run_fetcher_with_fakes(tmp_path: Path) -> None:
     config_path = tmp_path / "ECR_Config.xlsx"
-    write_fake_config(config_path)
+    write_fake_config(config_path, pivot_fields=["ALM_Planned Effort", "ALM_Remaining Effort"])
 
     path_patches = {
         "ECR_CONFIG_PATH": str(config_path),
@@ -204,7 +216,7 @@ def assert_database(tmp_path: Path) -> None:
 
 def assert_excel(tmp_path: Path) -> None:
     wb = openpyxl.load_workbook(tmp_path / "data.xlsx")
-    assert wb.sheetnames == ["Items", "Edges", "Metadata"], wb.sheetnames
+    assert wb.sheetnames == ["Items", "ECR Tree", "Edges", "Metadata"], wb.sheetnames
 
     ws = wb["Items"]
     headers = [cell.value for cell in ws[1]]
@@ -226,6 +238,93 @@ def assert_excel(tmp_path: Path) -> None:
     ws_meta = wb["Metadata"]
     meta_values = {(row[0], row[1]) for row in ws_meta.iter_rows(values_only=True)}
     assert ("work_item", 4) in meta_values and ("work_items", 6) in meta_values, meta_values
+
+    assert_tree_sheet(wb)
+
+
+def assert_tree_sheet(wb) -> None:
+    """ECR Tree 透视树：表头 / TOTAL / 各 ECR 子树汇总 / 大纲层级 / 去重口径。
+
+    期望值（假数据的 Planned Effort）：
+    - ECR 101 子树 = 101(5) + 201(4) + 202(6) + 210(2) + 220(3) + 301(8) + 401(空) = 28，7 个节点
+    - ECR 102 子树 = 102(空) + 202(6) + 210(2) + 220(3) + 302/402(空) = 11，6 个节点
+    - ECR 103 = 叶子，0，1 个节点；TOTAL = 39，14 个节点
+    - Remaining Effort：101 子树 = 1 + 2 = 3；102 子树也含 210 = 2；TOTAL = 5
+    """
+    ws = wb["ECR Tree"]
+    headers = [cell.value for cell in ws[1]]
+    assert headers == [
+        "ID", "Kind", "Summary", "State", "Subtree Items",
+        "Planned Effort", "Planned Effort Subtotal",
+        "Remaining Effort", "Remaining Effort Subtotal",
+    ], headers
+
+    tree_rows = list(ws.iter_rows(min_row=2, values_only=True))
+    total = tree_rows[0]
+    assert total[2] == "TOTAL (all ECRs)", total
+    assert total[4] == 14 and total[6] == 39 and total[8] == 5, total
+
+    by_id = {}
+    ordered_ids = []
+    for excel_row, values in enumerate(tree_rows, start=2):
+        if isinstance(values[0], int):
+            by_id[values[0]] = (excel_row, values)
+            ordered_ids.append(values[0])
+
+    # 各 ECR 子树汇总与节点数
+    assert by_id[101][1][4] == 7 and by_id[101][1][6] == 28 and by_id[101][1][8] == 3, by_id[101]
+    assert by_id[102][1][4] == 6 and by_id[102][1][6] == 11 and by_id[102][1][8] == 2, by_id[102]
+    assert by_id[103][1][4] == 1 and by_id[103][1][6] == 0, by_id[103]
+    # 自身值列
+    assert by_id[201][1][5] == 4 and by_id[220][1][6] == 3, by_id[220]
+    # 未导出的 230 绝不出现
+    assert 230 not in by_id
+
+    # 大纲层级：ECR=0（未设置），WI L0=1 / L1=2 / L2=3，Action/Build=1
+    def outline(item_id: int) -> int:
+        return ws.row_dimensions[by_id[item_id][0]].outlineLevel or 0
+
+    assert outline(101) == 0 and outline(102) == 0 and outline(103) == 0
+    assert outline(201) == 1 and outline(202) == 1
+    assert outline(210) == 2 and outline(220) == 3
+    assert outline(301) == 1 and outline(401) == 1
+
+    # 行序与去重口径：101 子树内 210 只挂首条路径（201 下）；202 跨 ECR 各出现一次
+    assert ordered_ids == [101, 201, 210, 220, 202, 301, 401,
+                           102, 202, 210, 220, 302, 402, 103], ordered_ids
+    ecr_101_ids = ordered_ids[:ordered_ids.index(102)]
+    assert ecr_101_ids.count(210) == 1, ecr_101_ids
+    assert ordered_ids.count(202) == 2 and ordered_ids.count(210) == 2
+
+    # 加粗：TOTAL 行与 ECR 行；普通节点不加粗
+    assert ws.cell(2, 3).font.bold and ws.cell(by_id[101][0], 1).font.bold
+    assert not ws.cell(by_id[201][0], 1).font.bold
+
+    # 大纲分组配置：汇总行在组上方（+/− 出现在父行）
+    assert ws.sheet_properties.outlinePr.summaryBelow is False
+    assert ws.freeze_panes == "A3"
+
+
+def assert_config_variants(tmp_path: Path) -> None:
+    """Pivot sheet 缺省与校验行为（直接调 load_ecr_config，不走 fetcher）。"""
+    from ecr_config import load_ecr_config
+
+    no_pivot = tmp_path / "cfg_no_pivot.xlsx"
+    write_fake_config(no_pivot, pivot_fields=None)
+    assert load_ecr_config(no_pivot).pivot_fields == ["ALM_Planned Effort"]
+
+    empty_pivot = tmp_path / "cfg_empty_pivot.xlsx"
+    write_fake_config(empty_pivot, pivot_fields=[])
+    assert load_ecr_config(empty_pivot).pivot_fields == []
+
+    bad_pivot = tmp_path / "cfg_bad_pivot.xlsx"
+    write_fake_config(bad_pivot, pivot_fields=["ALM_Planned Effort", "ALM_Nope"])
+    try:
+        load_ecr_config(bad_pivot)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Pivot 里的未知字段应触发 ValueError")
 
 
 def assert_json(tmp_path: Path) -> None:
@@ -252,8 +351,9 @@ def main() -> int:
         assert_database(tmp_path)
         assert_excel(tmp_path)
         assert_json(tmp_path)
+        assert_config_variants(tmp_path)
         assert not (tmp_path / ".tmp_exportissues").exists(), "临时导出目录未清理"
-    print("selftest_fetch: PASS (db / xlsx / manifest / schema)")
+    print("selftest_fetch: PASS (db / xlsx / tree / manifest / schema / config)")
     return 0
 
 
