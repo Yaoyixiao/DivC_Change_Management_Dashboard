@@ -35,7 +35,7 @@ ECR（配置的根 ID）
 
 数据库为通用节点表结构（列名由字段表动态生成，`*_date` 列统一存 ISO `YYYY-MM-DD` 文本）：
 
-- `items`：全部实体一张表。`kind` ∈ ecr / work_item / action / build；`level` 仅 work_item 有值（距 ECR 的 hop 数 0/1/2）；其余列为 Data_Field 的字段（剥 `ALM_` 前缀、小写、空格转下划线）
+- `items`：全部实体一张表。`kind` ∈ ecr / work_item / action / build；`level` 仅 work_item 有值（距 ECR 的 hop 数 0/1/2）；`process_area` 仅 work_item 有值（从 Summary 抽取的 ASPICE 流程域）；其余列为 Data_Field 的字段（剥 `ALM_` 前缀、小写、空格转下划线）
 - `edges`：`(parent_id, child_id, relation)`，relation ∈ work_items / actions / work_item_for
 - `metadata`：schema_version / generated_at / config_file / root_item_ids
 
@@ -46,5 +46,7 @@ ECR（配置的根 ID）
 - 同一 Work Item 被多个父级引用时只导出一次，但每条引用各自成边。
 - 关联目标在 PTC 不存在时对应边被丢弃；根 ID 不存在时导出数少于配置数并记 warning。
 - **透视树（ECR Tree）**：Subtotal = 自身 + 全部后代；同一 ECR 子树内节点去重（多父级挂首条路径）；TOTAL = 各 ECR Subtotal 之和，共享节点会被计多次（列内一致性优先）。
+- **Team 清洗**：导出时对 `Team` 列统一清洗——去掉开头的 `(数字id)` 与结尾的 `PR+数字` 项目号，只保留团队名（如 `(12345) Software Integration PR24680` → `Software Integration`）。
+- **Process Area 派生列**：`process_area` 仅对 work_item 从 `Summary` 抽取 ASPICE 流程域缩写（如 `MAN.3`/`SWE.3`/`SYS.1`）；容忍 `SWE. 3` 带空格写法并归一化为 `SWE.3`；多个命中取第一个；无命中留空；ECR/Action/Build 不抽取。
 - CLI 日志仅用 ASCII 字符（Windows 控制台代码页兼容）。
 - 日期列判定：数据库列名以 `_date` 结尾（如 planned_start_date；`...Date Ref` 类字段不作日期处理）。

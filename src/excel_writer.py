@@ -62,14 +62,18 @@ def write_items_to_excel(output_path, fields, items, relationships, pivot_fields
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     aliases = [build_alias(field) for field in fields]
-    item_columns = ["ID", "Kind", "Level"] + [alias for alias in aliases if alias != "ID"]
+    item_columns = ["ID", "Kind", "Level", config.ALIAS_PROCESS_AREA] + [
+        alias for alias in aliases if alias != "ID"]
     item_rows: list[dict[str, Any]] = []
     for kind, rows, levels in items:
         level_map = levels or {}
         for row in rows:
             item_id = str(row.get("ID", "")).strip()
             level_value = level_map.get(int(item_id), "") if item_id.isdigit() else ""
-            item_row: dict[str, Any] = {"ID": item_id, "Kind": kind, "Level": level_value}
+            item_row: dict[str, Any] = {
+                "ID": item_id, "Kind": kind, "Level": level_value,
+                config.ALIAS_PROCESS_AREA: row.get(config.ALIAS_PROCESS_AREA, ""),
+            }
             for alias in aliases:
                 if alias != "ID":
                     item_row[alias] = row.get(alias, "")

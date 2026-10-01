@@ -28,6 +28,46 @@ def build_column_names(fields: Iterable[str]) -> list[str]:
         raise ValueError(f"字段列名冲突: {duplicates}")
     return names
 
+
+# ---------- 导出数据清洗 ----------
+
+_TEAM_LEADING_ID_RE = re.compile(r"^\s*\(\d+\)\s*")
+# 结尾项目号两种实测形态：裸 "PR65978" 与方括号 "[PR60806]"
+_TEAM_TRAILING_PROJECT_RE = re.compile(r"\s*(?:\[\s*PR\d+\s*\]|PR\d+)\s*$", re.IGNORECASE)
+
+
+def clean_team(value: Any) -> str:
+    """清洗 Team 文本：去掉开头的 "(数字id)" 与结尾的 "PR+数字" 项目号，只保留团队名。
+
+    例："(12345) Software Integration PR24680" -> "Software Integration"，
+        "(10128928) APSW-CPP-DiagnosticSerivce[PR60806]" -> "APSW-CPP-DiagnosticSerivce"。
+    两个部分都可选；整串都被剥掉时返回空串。
+    """
+    text = str(value or "").strip()
+    text = _TEAM_LEADING_ID_RE.sub("", text)
+    text = _TEAM_TRAILING_PROJECT_RE.sub("", text)
+    return text.strip()
+
+
+# ---------- 派生数据段：Process Area（ASPICE 流程域） ----------
+
+# ASPICE 流程域缩写：2-4 个大写字母 + 点号 + 1-2 位数字（如 MAN.3 / SWE.3 / SYS.1 / SUP.8）。
+# 缩写与点号/数字之间允许有空格（实测 Summary 里有 "SWE. 3" 写法），输出前归一化掉。
+# 词边界限定：避免从长单词中部误抽（如 "EEPROM.2" 不会抽出 "ROM.2"）。
+_PROCESS_AREA_RE = re.compile(r"\b([A-Z]{2,4})\s*\.\s*(\d{1,2})\b")
+
+
+def extract_process_area(value: Any) -> str:
+    """从 Summary 文本抽取 ASPICE 流程域缩写，如 "MAN.3" / "SWE.3" / "SYS.1"。
+
+    - 容忍 "SWE. 3" 这类带空格的写法，输出统一为无空格的 "SWE.3"
+    - 多个命中取第一个；无命中返回空串
+    """
+    match = _PROCESS_AREA_RE.search(str(value or ""))
+    if match is None:
+        return ""
+    return f"{match.group(1)}.{match.group(2)}"
+
 _TEXT_DATE_FORMATS = (
     "%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y",
     "%b %d, %Y", "%B %d, %Y", "%d-%b-%Y", "%d %b %Y",

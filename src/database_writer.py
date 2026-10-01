@@ -19,6 +19,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+import config
 from data_utils import build_alias, build_column_names, date_to_iso
 
 # [(kind, rows, levels)]，levels 仅 work_item 有值
@@ -39,14 +40,18 @@ def _field_mappings(fields: list[str]) -> list[tuple[str, str, str]]:
 
 
 def _build_schema_sql(field_columns: list[str]) -> str:
-    item_defs = ",\n  ".join(f"{column} TEXT" for column in field_columns)
+    """items 表的固定列 + 字段列；process_area 为派生列（仅 work_item 有值）。"""
+    process_area_column = config.ALIAS_PROCESS_AREA.lower().replace(" ", "_")
+    item_columns = (
+        ["id INTEGER PRIMARY KEY", "kind TEXT NOT NULL", "level INTEGER",
+         f"{process_area_column} TEXT"]
+        + [f"{column} TEXT" for column in field_columns]
+    )
+    item_defs = ",\n  ".join(item_columns)
     return f"""
 PRAGMA foreign_keys = ON;
 CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE items (
-  id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL,
-  level INTEGER,
   {item_defs}
 );
 CREATE TABLE edges (
@@ -82,14 +87,15 @@ def write_dashboard_database(
             ("root_item_ids", json.dumps(root_ids, ensure_ascii=False)),
         ])
 
-        placeholders = ", ".join("?" for _ in range(3 + len(mappings)))
+        placeholders = ", ".join("?" for _ in range(4 + len(mappings)))
         insert_sql = f"INSERT INTO items VALUES({placeholders})"
         for kind, rows, levels in items:
             level_map = levels or {}
             data = []
             for row in rows:
                 item_id = int(str(row["ID"]).strip())
-                values = [item_id, kind, level_map.get(item_id)]
+                values = [item_id, kind, level_map.get(item_id),
+                          row.get(config.ALIAS_PROCESS_AREA, "")]
                 for _, alias, column in mappings:
                     value = row.get(alias, "")
                     if column.endswith("_date"):

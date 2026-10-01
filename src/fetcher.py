@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config
 from cli_client import export_issues
-from data_utils import build_aliases
+from data_utils import build_aliases, clean_team, extract_process_area
 from database_writer import write_dashboard_database
 from ecr_config import load_ecr_config
 from excel_writer import write_items_to_excel
@@ -43,7 +43,32 @@ def export_ids_in_batches(item_ids, fields, prefix, temp_dir):
         path = temp_dir / f"{prefix}_{index:03d}.xls"
         export_issues(build_id_query_definition(batch), fields, str(path))
         all_rows.extend(normalize_columns(read_exported_excel(path), build_aliases(fields)))
-    return deduplicate_by_id(all_rows)
+    return _clean_rows(deduplicate_by_id(all_rows))
+
+
+def _clean_rows(rows):
+    """导出数据清洗（normalize/去重之后、进遍历与四个 writer 之前统一执行）。
+
+    - Team：去掉开头的 "(数字id)" 与结尾的 "PR+数字" 项目号，只保留团队名。
+    """
+    for row in rows:
+        value = row.get(config.ALIAS_TEAM, "")
+        if value:
+            row[config.ALIAS_TEAM] = clean_team(value)
+    return rows
+
+
+def _tag_process_areas(items):
+    """为 work_item 行补派生数据段 Process Area（从 Summary 抽取 ASPICE 流程域缩写）。
+
+    按需求该数据段仅用于 work_item 分类，其余 kind 不抽取（保持为空）。
+    """
+    for kind, rows, _ in items:
+        if kind != config.KIND_WORK_ITEM:
+            continue
+        for row in rows:
+            row[config.ALIAS_PROCESS_AREA] = extract_process_area(row.get("Summary", ""))
+    return items
 
 
 def _batch_exporter(fields, prefix, temp_dir):
@@ -95,6 +120,7 @@ def main() -> None:
             (config.KIND_ACTION, action_items, None),
             (config.KIND_BUILD, build_items, None),
         ]
+        _tag_process_areas(items)
         counts = {kind: len(rows) for kind, rows, _ in items}
         relationship_counts = {relation: len(edges) for relation, edges in relationships.items()}
         logger.info("计数: %s", counts)

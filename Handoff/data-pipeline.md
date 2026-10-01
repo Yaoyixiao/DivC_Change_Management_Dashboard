@@ -69,7 +69,7 @@ ECR（根，ID 来自配置）
 | `cli_client.py` | `im connect` + `im exportissues` 封装（未改动） | `export_issues(query_definition, fields, output_file)` |
 | `parser.py` | 解析导出文件与关系字段（未改动，仅拆分读取函数） | `read_exported_excel` / `normalize_columns` / `parse_id_list` / `collect_related_ids` / `build_id_query_definition` / `batched` / `deduplicate_by_id` |
 | `relationship_builder.py` | BFS 遍历 + 建边（纯逻辑，导出经 `export_fn` 回调注入） | `traverse_work_items(ecr_items, export_fn)` / `build_relationships(...)` |
-| `data_utils.py` | 日期解析 + 字段名推导 | `build_alias` / `build_aliases` / `build_column_names` / `parse_date` / `date_to_iso` |
+| `data_utils.py` | 日期解析 + 字段名推导 + 导出数据清洗与派生 | `build_alias` / `build_aliases` / `build_column_names` / `clean_team` / `extract_process_area` / `parse_date` / `date_to_iso` |
 | `database_writer.py` | SQLite（通用节点表） | `write_dashboard_database(...)` |
 | `excel_writer.py` | Excel 三 sheet | `write_items_to_excel(...)` |
 | `json_writer.py` | manifest + schema JSON | `write_dashboard_json(...)` |
@@ -107,6 +107,7 @@ items(
   id INTEGER PRIMARY KEY,      -- PTC Item ID（四类实体共用一张表）
   kind TEXT NOT NULL,          -- 'ecr' | 'work_item' | 'action' | 'build'（config.KINDS）
   level INTEGER,               -- 仅 work_item：距 ECR 的 hop 数 0/1/2；其余 kind 为 NULL
+  process_area TEXT,           -- 仅 work_item：从 Summary 抽取的 ASPICE 流程域（见 §5.5）；其余 kind 为空
   ... 41 个字段列 TEXT         -- 由 Data_Field 动态生成：剥 ALM_ 前缀、小写、空格转下划线
 )
 edges(                          -- 显式关系边
@@ -122,6 +123,7 @@ metadata(key, value)            -- schema_version / generated_at / config_file /
 
 - 日期列判定：**列名以 `_date` 结尾**才做 ISO 转换（`YYYY-MM-DD` 文本）。注意
   `review_planned_start_date_ref` 这类 "...Date Ref" 字段**不**按日期处理，原样存文本。
+- 派生列 `process_area` 不在 Data_Field 字段表里，schema 固定生成（与 `level` 同理）。
 - 其余列全部 TEXT（含工时/时长等数值列）——phase 2 聚合时需要时再 CAST。
 - 写入原子（`.tmp` + `os.replace`），完成后 `PRAGMA integrity_check`。
 
@@ -129,7 +131,7 @@ metadata(key, value)            -- schema_version / generated_at / config_file /
 
 | Sheet | 内容 |
 |---|---|
-| `Items` | `ID, Kind, Level` + 42 个字段的展示别名（剥 ALM_ 前缀）；别名以 `Date` 结尾的列写成真日期单元格 |
+| `Items` | `ID, Kind, Level, Process Area` + 42 个字段的展示别名（剥 ALM_ 前缀）；别名以 `Date` 结尾的列写成真日期单元格；Process Area 仅 work_item 有值 |
 | `ECR Tree` | **透视树**（2026-10-01 新增，见下方口径） |
 | `Edges` | `Parent ID, Child ID, Relation` |
 | `Metadata` | Export Time + 各 kind 计数 + 各 relation 计数 |
@@ -161,6 +163,30 @@ items 表 44 列（id + kind + level + 41 字段列），其中 10 个 *_date �
 
 注意：**build 仅 5 个但边有 8 条**——同一 Build 被多个 ECR 引用时各成一条边（共享实体只导出一次）。
 Dashboard 聚合时按边计数与按实体计数会不同，口径要想清楚。
+
+### 5.5 导出时数据清洗与派生数据段（2026-10-01）
+
+两类动作都在 `fetcher` 出口处统一执行，Excel / DB / 下游消费的值全部是处理后的。
+
+**清洗**（`fetcher._clean_rows`，在 `export_ids_in_batches` 出口、normalize/去重之后执行，
+`data_utils.clean_team`，作用于所有 kind 的 `Team` 列）：
+
+- 去掉开头的 `(数字id)`：`(12345) Software Integration` → `Software Integration`
+- 去掉结尾的 `PR+数字` 项目号（PR 忽略大小写），实测两种形态都兼容：裸 `PR65978` 与方括号 `[PR60806]`：
+  `Hardware Team PR1001` → `Hardware Team`；`APSW-CPP-VehicleCommunication [PR60806]` → `APSW-CPP-VehicleCommunication`
+- 两段都可选，同时存在时都剥；整串被剥掉（如 `(777) PR888`）时留空；无前后缀的值原样保留
+- 已用真实运行的全部 25 个 Team 唯一值逐一验证清洗结果（2026-10-01）
+
+**派生数据段 Process Area**（`fetcher._tag_process_areas`，在 items 组装后、writer 之前执行，
+`data_utils.extract_process_area`，按需求**仅 work_item**）：
+
+- 从 `Summary` 抽取 ASPICE 流程域缩写（2-4 位大写字母 + 点号 + 1-2 位数字），
+  如 `MAN.3` / `SWE.3` / `SYS.1` / `SUP.8`
+- 容忍缩写与点号/数字之间的空格（实测有 `SWE. 3` 写法），输出归一化为 `SWE.3`
+- 多个命中取第一个（如 `MAN.3 plan SWE.1 extra` → `MAN.3`）；无命中留空
+- 词边界限定，长单词中部的点号不会误抽（`EEPROM.2` 不产生 `ROM.2`）
+- ECR / Action / Build 不抽取（ECR Summary 里出现 `SYS.5` 也不算）——若以后要扩展到其他 kind，
+  改 `fetcher._tag_process_areas` 的 kind 过滤即可，schema 无需变动
 
 ## 6. 遍历与建边语义（改动前必读）
 
@@ -195,7 +221,8 @@ python src/selftest_fetch.py
 原理：monkeypatch `fetcher.export_issues`（写 xlsx 假导出）与 `fetcher.read_exported_excel`
 （经 BytesIO 按内容读——openpyxl 按扩展名拒读 `.xls` 命名的文件），并把 config 路径全部指到临时目录，
 然后跑真实 `fetcher.main()`。断言覆盖：共享 Work Item、三级递归与深度截断、不存在 ID 容错、
-回指不成环、ISO/Excel 序列数两种日期、四件套内容一致性、临时目录清理。
+回指不成环、ISO/Excel 序列数两种日期、Team 清洗（含整串剥空的边界）、Process Area 派生
+（带空格归一化 / 多命中取第一个 / 防误抽 / 仅 work_item）、四件套内容一致性、临时目录清理。
 
 **改遍历语义、schema 或 writer 后，先跑它再上真实环境。**
 
@@ -231,6 +258,8 @@ python src/selftest_fetch.py
 | 调 Work Item 层数 | `config.WORK_ITEM_MAX_LEVEL` | BFS 与 level 列自动适应 |
 | 加新关联类型（如 Sub Work Item 下的 Action） | `config` 加 `FIELD_/ALIAS_/REL_` 常量 → `relationship_builder` 加遍历/建边 → `fetcher.main` 接线 → `json_writer` 的 `relations` 列表加一项 | selftest 加对应假数据断言 |
 | 按 kind 拆分字段清单 | `ecr_config` 扩展配置结构 + `fetcher` 每类实体用各自字段表 | 仅当 PTC 拒绝跨类型字段时才需要 |
+| 加新的导出清洗规则 | `data_utils` 加纯函数 + `fetcher._clean_rows` 接线 + `selftest_fetch` 加假数据断言 | 清洗统一在 normalize/去重之后、写四件套之前执行（现规则见 §5.5） |
+| 加新的派生数据段（如从 Summary 抽取） | `data_utils` 加纯函数 + `config` 加 `ALIAS_*` 常量 + 三个 writer 加固定列 + `fetcher` 加 `_tag_*` 接线 + `selftest_fetch` 加断言 | 参考 Process Area 的实现（§5.5）；schema 变更后旧 dashboard.db 需重跑取数才会带上新列 |
 | phase 2：dashboard 适配 | 重写 `dashboard_generator/data_loader.py`（items/edges → 旧 payload 形状或新形状）+ `aggregations.py` 口径 + `template/app.js` | 旧聚合里的 `OPEN_STATES/CLOSED_STATES`、三色映射、`ra_op_time` 思路可复用；`__PAYLOAD__` 契约（data/aggregations/meta）建议保留 |
 
 ## 10. 与其他 Handoff 文档的关系

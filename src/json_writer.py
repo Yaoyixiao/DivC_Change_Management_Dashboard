@@ -9,7 +9,9 @@ from data_utils import build_alias, build_column_names
 
 
 def _build_schema(schema_version: int, fields: list[str]) -> dict:
-    columns = {"id": "integer", "kind": "text", "level": "integer"}
+    process_area_column = config.ALIAS_PROCESS_AREA.lower().replace(" ", "_")
+    columns = {"id": "integer", "kind": "text", "level": "integer",
+               process_area_column: "text"}
     for alias in (build_alias(field) for field in fields):
         if alias == "ID":
             continue

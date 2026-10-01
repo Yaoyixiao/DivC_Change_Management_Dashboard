@@ -37,6 +37,11 @@ FIELD_WORK_ITEM_FOR = "ALM_Work Item For"
 ALIAS_WORK_ITEMS = build_alias(FIELD_WORK_ITEMS)        # "Work Items"
 ALIAS_ACTIONS = build_alias(FIELD_ACTIONS)              # "Actions"
 ALIAS_WORK_ITEM_FOR = build_alias(FIELD_WORK_ITEM_FOR)  # "Work Item For"
+ALIAS_TEAM = build_alias("ALM_Team")                    # "Team"（导出时清洗，见 data_utils.clean_team）
+
+# 派生数据段（不在 Data_Field 字段表里，导出时计算）：ASPICE 流程域，
+# 仅 work_item 有值，从 Summary 抽取（见 data_utils.extract_process_area）
+ALIAS_PROCESS_AREA = "Process Area"   # 行 dict 键 / Excel 列名；DB 列名 process_area
 
 # Work Item 递归深度：ECR 下最多 L0/L1/L2 三级（hop 数 0/1/2），L2 不再下钻
 WORK_ITEM_MAX_LEVEL = 2

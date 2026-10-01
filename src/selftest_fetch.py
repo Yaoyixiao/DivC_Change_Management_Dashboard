@@ -17,6 +17,9 @@ SQLite / Excel / manifest / schema 的内容，最后自动清理。
 - 关联目标不存在（边被丢弃）、根 ID 不存在（计数告警）
 - 最深层回指上层节点（不产生环）
 - ISO 字符串日期与 Excel 序列数日期两种写法
+- Team 字段清洗：去开头 "(数字id)" / 结尾 "PR+项目号"（含 [PR...] 方括号形态、整串剥空的边界）
+- Process Area 派生列：从 work_item 的 Summary 抽取 ASPICE 流程域
+  （"SWE. 3" 带空格归一化、多命中取第一个、"EEPROM.2" 不误抽、仅 work_item 有值）
 """
 from __future__ import annotations
 
@@ -42,7 +45,7 @@ from parser import read_xlsx_rows
 ROOT_IDS = [101, 102, 103, 109]  # 109 在 PTC 不存在
 
 FIELDS = [
-    "ID", "Type", "Summary", "State", "Created Date", "ALM_Owners",
+    "ID", "Type", "Summary", "State", "Created Date", "ALM_Owners", "ALM_Team",
     "ALM_Planned Start Date", "ALM_Target Date", "ALM_Maturity Level",
     "ALM_Planned Effort", "ALM_Remaining Effort",
     "ALM_Work Items", "ALM_Actions", "ALM_Work Item For",
@@ -50,34 +53,43 @@ FIELDS = [
 
 # 模拟 im exportissues 的原始导出：键为原始字段名
 FAKE_ITEMS: dict[int, dict] = {
-    101: {"ID": 101, "Type": "ECR", "Summary": "ECR 101", "State": "ALM_Defined",
+    101: {"ID": 101, "Type": "ECR", "Summary": "ECR 101 SYS.5 process review",
+          "State": "ALM_Defined",
           "Created Date": "2026-01-15", "ALM_Target Date": "2026-06-30",
           "ALM_Planned Effort": "5",
+          "ALM_Team": "(12345) Software Integration PR24680",
           "ALM_Work Items": "201, 202", "ALM_Actions": "301", "ALM_Work Item For": "401"},
     102: {"ID": 102, "Type": "ECR", "Summary": "ECR 102", "State": "ALM_Initiated",
           "Created Date": "2026-02-01", "ALM_Planned Effort": "",
+          "ALM_Team": "Platform Team",
           "ALM_Work Items": "202, 203, 999",
           "ALM_Actions": "302, 399",
           "ALM_Work Item For": "402"},
     103: {"ID": 103, "Type": "ECR", "Summary": "ECR 103", "State": "ALM_Closed",
           "Created Date": "2026-02-10"},
-    201: {"ID": 201, "Type": "Work Item", "Summary": "WI 201", "State": "ALM_Started",
+    201: {"ID": 201, "Type": "Work Item", "Summary": "WI 201 SYS.2 analyze requirements",
+          "State": "ALM_Started",
           "ALM_Planned Start Date": "2026-03-15", "ALM_Planned Effort": "4",
+          "ALM_Team": "(99) Hardware Team PR1001",
           "ALM_Remaining Effort": "1", "ALM_Work Items": "210"},
-    202: {"ID": 202, "Type": "Work Item", "Summary": "WI 202", "State": "ALM_Defined",
+    202: {"ID": 202, "Type": "Work Item", "Summary": "WI 202 SWE. 3 software design",
+          "State": "ALM_Defined",
           "ALM_Planned Start Date": 46000, "ALM_Planned Effort": "6",
           "ALM_Work Items": "210"},
-    210: {"ID": 210, "Type": "Work Item", "Summary": "WI 210", "State": "ALM_Planned",
+    210: {"ID": 210, "Type": "Work Item", "Summary": "WI 210 MAN.3 plan SWE.1 extra",
+          "State": "ALM_Planned",
           "ALM_Planned Effort": "2", "ALM_Remaining Effort": "2", "ALM_Work Items": "220"},
-    220: {"ID": 220, "Type": "Work Item", "Summary": "WI 220", "State": "ALM_Initiated",
+    220: {"ID": 220, "Type": "Work Item", "Summary": "WI 220 EEPROM.2 decoy",
+          "State": "ALM_Initiated",
           "ALM_Planned Effort": "3", "ALM_Work Items": "201, 230"},  # 已到 L2：不下钻；201 是回指
     230: {"ID": 230, "Type": "Work Item", "Summary": "WI 230", "State": "ALM_Initiated",
           "ALM_Planned Effort": "9"},  # 存在但超出深度，不应被导出/计数
     301: {"ID": 301, "Type": "Action", "Summary": "Action 301", "State": "ALM_Checked",
-          "ALM_Planned Effort": "8"},
-    302: {"ID": 302, "Type": "Action", "Summary": "Action 302", "State": "ALM_Closed"},
+          "ALM_Planned Effort": "8", "ALM_Team": "(5) QA Team"},
+    302: {"ID": 302, "Type": "Action", "Summary": "Action 302", "State": "ALM_Closed",
+          "ALM_Team": "(8) DiagnosticTeam[PR60806]"},  # 结尾方括号形态 [PRxxxxx]
     401: {"ID": 401, "Type": "Build", "Summary": "Build 401", "ALM_Target Date": "2026-08-01",
-          "ALM_Maturity Level": "CAT 3"},
+          "ALM_Maturity Level": "CAT 3", "ALM_Team": "(777) PR888"},  # 整串被剥掉 -> 留空
     402: {"ID": 402, "Type": "Build", "Summary": "Build 402", "ALM_Target Date": "2026-09-15",
           "ALM_Maturity Level": "CAT 4"},
 }
@@ -207,9 +219,26 @@ def assert_database(tmp_path: Path) -> None:
             "SELECT id, created_date FROM items WHERE kind = 'ecr'").fetchall())
         assert created[101] == "2026-01-15", created
 
+        teams = dict(cur.execute("SELECT id, team FROM items").fetchall())
+        assert teams[101] == "Software Integration", teams[101]  # 开头 (id) 与结尾 PR 号都剥掉
+        assert teams[102] == "Platform Team", teams[102]         # 无前后缀时原样保留
+        assert teams[201] == "Hardware Team", teams[201]
+        assert teams[301] == "QA Team", teams[301]
+        assert teams[302] == "DiagnosticTeam", teams[302]        # 结尾 [PRxxxxx] 方括号形态
+        assert teams[401] == "", teams[401]                      # 整串被剥掉时留空
+
+        areas = dict(cur.execute(
+            "SELECT id, process_area FROM items WHERE kind = 'work_item'").fetchall())
+        assert areas == {201: "SYS.2", 202: "SWE.3", 210: "MAN.3", 220: ""}, areas
+        # 202 带空格的 "SWE. 3" 归一化；210 多命中取第一个；220 的 EEPROM.2 不误抽
+        tagged_non_wi = cur.execute(
+            "SELECT COUNT(*) FROM items WHERE kind != 'work_item' AND process_area != ''"
+        ).fetchone()[0]
+        assert tagged_non_wi == 0, "process_area 仅 work_item 应有值（ECR 101 的 SYS.5 不算）"
+
         columns = [row[1] for row in cur.execute("PRAGMA table_info(items)").fetchall()]
         assert "planned_start_date" in columns and "maturity_level" in columns, columns
-        assert "kind" in columns and "level" in columns, columns
+        assert "kind" in columns and "level" in columns and "process_area" in columns, columns
     finally:
         con.close()
 
@@ -220,7 +249,7 @@ def assert_excel(tmp_path: Path) -> None:
 
     ws = wb["Items"]
     headers = [cell.value for cell in ws[1]]
-    expected_headers = ["ID", "Kind", "Level"] + [
+    expected_headers = ["ID", "Kind", "Level", config.ALIAS_PROCESS_AREA] + [
         build_alias(field) for field in FIELDS if build_alias(field) != "ID"]
     assert headers == expected_headers, headers
     data_rows = ws.max_row - 1
@@ -231,6 +260,10 @@ def assert_excel(tmp_path: Path) -> None:
     assert by_id[201][1] == "work_item" and by_id[201][2] == 0, by_id[201][:3]
     assert by_id[220][2] == 2, by_id[220][:3]
     assert isinstance(by_id[201][headers.index("Planned Start Date")], datetime), "日期列应为日期单元格"
+    assert by_id[101][headers.index("Team")] == "Software Integration", by_id[101]
+    pa_col = headers.index("Process Area")
+    assert by_id[201][pa_col] == "SYS.2" and by_id[202][pa_col] == "SWE.3", (by_id[201][pa_col], by_id[202][pa_col])
+    assert by_id[101][pa_col] in ("", None), by_id[101][pa_col]  # ECR 不抽 Process Area
 
     ws_edges = wb["Edges"]
     assert ws_edges.max_row - 1 == sum(EXPECTED_RELATIONSHIPS.values()), ws_edges.max_row
@@ -337,6 +370,7 @@ def assert_json(tmp_path: Path) -> None:
     schema = json.loads((tmp_path / "dashboard_schema.json").read_text(encoding="utf-8"))
     item_columns = schema["tables"]["items"]["columns"]
     assert item_columns["id"] == "integer" and item_columns["level"] == "integer"
+    assert item_columns["process_area"] == "text"
     assert item_columns["planned_start_date"] == "date"
     assert item_columns["created_date"] == "date"
     assert item_columns["summary"] == "text"
