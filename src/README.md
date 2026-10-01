@@ -1,0 +1,48 @@
+# DivC Change Management 数据流水线（ECR 层级）
+
+## 运行
+
+```powershell
+python -m pip install -r requirements.txt
+python fetcher.py            # 真实取数（需要 PTC 客户端 im 在 PATH 上）
+python selftest_fetch.py     # 离线冒烟测试（假数据全链路，无需 PTC）
+```
+
+## 配置：ECR_Config.xlsx（与脚本同目录）
+
+| Sheet | 内容 |
+|---|---|
+| `ECR` | `ID` 列 = 所有第一级要导出的 ECR Item |
+| `Data_Field` | `Field` 列 = 所有 item 统一要导出的字段（必须包含 `ID`、`ALM_Work Items`、`ALM_Actions`、`ALM_Work Item For`） |
+
+导出层级：
+
+```
+ECR（配置的根 ID）
+├── Work Item        经上一级 ALM_Work Items 关联导出，递归三级（L0/L1/L2）
+│   └── Sub Work Item L1 / L2   同上，L2 不再下钻
+├── Action           经 ECR 的 ALM_Actions 关联导出
+└── Build            经 ECR 的 ALM_Work Item For 关联导出
+```
+
+## 输出
+
+- `output/data.xlsx`：人工核查（Items / Edges / Metadata 三个 sheet）
+- `output/dashboard.db`：SQLite 数据源
+- `output/dashboard_manifest.json`：本次生成时间、配置文件名、各 kind 与关系计数
+- `output/dashboard_schema.json`：前端/后端可读取的数据契约
+
+数据库为通用节点表结构（列名由字段表动态生成，`*_date` 列统一存 ISO `YYYY-MM-DD` 文本）：
+
+- `items`：全部实体一张表。`kind` ∈ ecr / work_item / action / build；`level` 仅 work_item 有值（距 ECR 的 hop 数 0/1/2）；其余列为 Data_Field 的字段（剥 `ALM_` 前缀、小写、空格转下划线）
+- `edges`：`(parent_id, child_id, relation)`，relation ∈ work_items / actions / work_item_for
+- `metadata`：schema_version / generated_at / config_file / root_item_ids
+
+## 语义约定
+
+- **level** = 距任一 ECR 沿 `work_items` 边的最小 hop 数（BFS 首次发现即定）。
+- **边只记录遍历方向的边**（父 → 本层新发现的子）：已见节点不重复导出也不产生边，天然无环。
+- 同一 Work Item 被多个父级引用时只导出一次，但每条引用各自成边。
+- 关联目标在 PTC 不存在时对应边被丢弃；根 ID 不存在时导出数少于配置数并记 warning。
+- CLI 日志仅用 ASCII 字符（Windows 控制台代码页兼容）。
+- 日期列判定：数据库列名以 `_date` 结尾（如 planned_start_date；`...Date Ref` 类字段不作日期处理）。

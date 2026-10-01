@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "database": "dashboard.db",
+  "date_storage": "ISO-8601 YYYY-MM-DD text",
+  "tables": {
+    "ra_op": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "summary": "text",
+        "project": "text"
+      }
+    },
+    "parent_op": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "state": "text",
+        "summary": "text",
+        "project": "text"
+      }
+    },
+    "child_op": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "state": "text",
+        "summary": "text",
+        "project": "text"
+      }
+    },
+    "deliveries": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "summary": "text",
+        "project": "text",
+        "target_date": "date"
+      }
+    },
+    "change_requests": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "state": "text",
+        "summary": "text",
+        "project": "text",
+        "team": "text",
+        "owners": "text"
+      }
+    },
+    "builds": {
+      "primary_key": "id",
+      "columns": {
+        "id": "integer",
+        "summary": "text",
+        "project": "text",
+        "target_date": "date",
+        "planned_completion_date": "date",
+        "maturity_level": "text"
+      }
+    },
+    "ra_op_parent_op": {
+      "columns": {
+        "ra_op_id": "integer",
+        "parent_op_id": "integer"
+      }
+    },
+    "ra_op_child_op": {
+      "columns": {
+        "ra_op_id": "integer",
+        "child_op_id": "integer"
+      }
+    },
+    "related_delivery": {
+      "columns": {
+        "related_id": "integer",
+        "delivery_id": "integer"
+      }
+    },
+    "related_change_request": {
+      "columns": {
+        "related_id": "integer",
+        "change_request_id": "integer"
+      }
+    },
+    "change_request_build": {
+      "columns": {
+        "change_request_id": "integer",
+        "build_id": "integer"
+      }
+    }
+  },
+  "views": [
+    "v_related_detail",
+    "v_change_request_detail"
+  ]
+}

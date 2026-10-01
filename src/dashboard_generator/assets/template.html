@@ -1,0 +1,283 @@
+<!--
+  Read-Across Dashboard — Template skeleton
+  由 html_template.py 拼接：head 注入 CSS、body 末尾注入 JS 与 __PAYLOAD__。
+  本文件承载 DOM 结构与首屏前的侧栏状态恢复脚本；样式见 styles.css；交互见 app.js。
+-->
+<script>
+  /* 首屏前恢复侧栏收起状态，避免展开→收起的闪烁 */
+  try { if (localStorage.getItem('readacross.sidebar') === 'collapsed') document.documentElement.classList.add('nav-collapsed'); } catch (e) {}
+</script>
+<div class="app">
+  <!-- ============================== Sidebar ============================== -->
+  <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+    <div class="sidebar-head">
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <span class="nav-label">ReadAcross</span>
+      </div>
+      <button class="collapse-btn" id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true" aria-label="Collapse sidebar" title="Collapse">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Sections">
+      <a class="nav-item active" href="#" data-page="overview" title="Overview" aria-current="page">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg>
+        <span class="nav-label">Overview</span>
+      </a>
+      <a class="nav-item" href="#" data-page="details" title="Details">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <span class="nav-label">Details</span>
+      </a>
+      <a class="nav-item" href="#" data-page="projects" title="Graph">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="12" cy="13" r="2.6"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/><line x1="6.9" y1="6.9" x2="10.1" y2="11.3"/><line x1="16.9" y1="6.3" x2="14.1" y2="11.2"/><line x1="6.8" y1="17.6" x2="10.2" y2="14.7"/><line x1="17.2" y1="17.6" x2="13.8" y2="14.7"/></svg>
+        <span class="nav-label">Graph</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- ============================== Main ============================== -->
+  <main class="main">
+    <!-- Top Bar -->
+    <header class="topbar" role="banner">
+      <div class="search" role="search">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="top-search" placeholder="Search items, IDs…" aria-label="Search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="search-panel" aria-autocomplete="list">
+        <span class="kbd">⌘ K</span>
+        <div class="search-panel" id="search-panel" hidden role="listbox" aria-label="Search results"></div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <section class="content">
+      <!-- Page Head（跨页面共享：标题随视图切换，日期选择器两个页面共用） -->
+      <div class="page-head">
+        <div>
+          <h1 id="page-title">Overview</h1>
+          <p class="page-meta">{{PAGE_META}}</p>
+        </div>
+        <div class="page-head-right">
+          <div class="pill pill-range" id="date-range" role="group" aria-label="Filter by RA-OP created date">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <input type="date" id="date-from" aria-label="From created date">
+            <span class="range-sep" aria-hidden="true">–</span>
+            <input type="date" id="date-to" aria-label="To created date">
+            <button type="button" class="range-clear" id="date-clear" aria-label="Clear date filter" title="Clear date filter">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid -->
+      <div class="page-view active" id="view-overview">
+      <div class="grid">
+        <!-- =============== Row 1: Summary + Target =============== -->
+        <section class="card span-8 summary-card" aria-labelledby="sum-h">
+          <header class="card-head">
+            <h2 id="sum-h">Summary</h2>
+          </header>
+          <div class="card-body summary-grid">
+            <div class="metric">
+              <div class="metric-icon ra" aria-hidden="true">
+                <!-- 旗标:顶层工作项,整条链从这里发起 -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              </div>
+              <div class="metric-body">
+                <div class="metric-label">RA-OP</div>
+                <div class="metric-value placeholder" id="m-ra-op">—</div>
+                <div class="metric-sub" id="m-ra-sub">in selected range</div>
+              </div>
+              <span class="trend placeholder" id="t-ra-op">—</span>
+            </div>
+
+            <div class="metric">
+              <div class="metric-icon child" aria-hidden="true">
+                <!-- 分叉:由父项派生出的子项 -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+              </div>
+              <div class="metric-body">
+                <div class="metric-label">CHILD OP</div>
+                <div class="metric-value placeholder" id="m-child-op">—</div>
+                <div class="metric-sub" id="m-child-sub">linked to RA-OPs</div>
+              </div>
+              <span class="trend placeholder" id="t-child-op">—</span>
+            </div>
+
+            <div class="metric">
+              <div class="metric-icon cr" aria-hidden="true">
+                <!-- 编辑:变更请求 = 对既有项的修改 -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </div>
+              <div class="metric-body">
+                <div class="metric-label">CHILD CR</div>
+                <div class="metric-value placeholder" id="m-child-cr">—</div>
+                <div class="metric-sub" id="m-cr-sub">change requests</div>
+              </div>
+              <span class="trend placeholder" id="t-cr">—</span>
+            </div>
+
+            <div class="metric">
+              <div class="metric-icon build" aria-hidden="true">
+                <!-- 包装箱:构建产物 -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              </div>
+              <div class="metric-body">
+                <div class="metric-label">BUILD</div>
+                <div class="metric-value placeholder" id="m-build">—</div>
+                <div class="metric-sub" id="m-build-sub">builds produced</div>
+              </div>
+              <span class="trend placeholder" id="t-build">—</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card span-4 target-card" aria-labelledby="tgt-h">
+          <header class="card-head">
+            <h2 id="tgt-h">Target</h2>
+            <span class="meta-sub" id="tgt-sub">closure rates</span>
+          </header>
+          <div class="card-body">
+            <div class="progress-row">
+              <div class="progress-head">
+                <span class="progress-label">CHILD OP closure</span>
+                <span class="progress-value placeholder" id="p-child">— %</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" id="pf-child" style="width:0%"></div></div>
+            </div>
+            <div class="progress-row">
+              <div class="progress-head">
+                <span class="progress-label">CHILD CR closure</span>
+                <span class="progress-value placeholder" id="p-cr">— %</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" id="pf-cr" style="width:0%"></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- =============== Row 2: Hero chart — CHILD OP =============== -->
+        <section class="card span-12 lg-card" aria-labelledby="lg-h">
+          <header class="card-head lg-head">
+            <h2 id="lg-h">CHILD OP</h2>
+            <div class="lg-legend" id="lg-legend-host"></div>
+          </header>
+          <div class="card-body">
+            <div class="lg-chart" id="lg-chart-host">
+              <!-- Step B renders SVG here -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+      </div>
+
+      <!-- =============== Details 视图：Recent Transactions 全宽表格 =============== -->
+      <div class="page-view" id="view-details" hidden>
+        <section class="card details-card" aria-labelledby="rt-h">
+          <header class="card-head details-head">
+            <div class="details-title">
+              <h2 id="rt-h">RA-OPs</h2>
+              <span class="details-count placeholder" id="rt-count">…</span>
+            </div>
+            <div class="head-actions">
+              <button class="more-btn" type="button" id="rt-expand-all">Expand all</button>
+              <button class="more-btn" type="button" id="rt-collapse-all">Collapse all</button>
+              <div class="seg" role="group" aria-label="Filter by status" id="rt-status">
+                <button type="button" class="seg-btn active" data-status="all" aria-pressed="true">All</button>
+                <button type="button" class="seg-btn" data-status="open" aria-pressed="false">Open</button>
+                <button type="button" class="seg-btn" data-status="closed" aria-pressed="false">Closed</button>
+              </div>
+            </div>
+          </header>
+          <div class="card-body">
+            <table class="tx-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Summary</th>
+                  <th>Project</th>
+                  <th class="th-sortable" aria-sort="none">
+                    <button type="button" class="th-sort" data-sort-key="childstate" aria-label="Sort by Child State">
+                      <span class="th-sort-label">Child State</span>
+                      <svg class="th-sort-icon" width="10" height="14" viewBox="0 0 10 14" aria-hidden="true" focusable="false">
+                        <path class="th-sort-up"   d="M5 1 L9 5 L1 5 Z" fill="currentColor"/>
+                        <path class="th-sort-down" d="M5 13 L9 9 L1 9 Z" fill="currentColor"/>
+                      </svg>
+                    </button>
+                  </th>
+                  <th class="tx-actions-col" aria-label="Details"></th>
+                </tr>
+              </thead>
+              <tbody id="recent-tx-host">
+                <!-- DetailsTable renders RA-OP rows + expandable child OP rows -->
+              </tbody>
+            </table>
+            <div class="tx-empty" id="rt-empty" hidden>
+              <p class="tx-empty-title">No RA-OPs in this view</p>
+              <p class="tx-empty-sub">Try another status, or clear the date filter above.</p>
+            </div>
+            <div class="tx-more" id="rt-more-wrap">
+              <button class="more-btn" type="button" id="rt-more">Show more</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- =============== Projects 视图：RA-OP → Child OP → Child CR 横向节点树 =============== -->
+      <div class="page-view" id="view-projects" hidden>
+        <section class="card tree-card" aria-labelledby="pt-h">
+          <header class="card-head tree-head">
+            <div class="details-title">
+              <h2 id="pt-h">Project graph</h2>
+              <span class="details-count placeholder" id="pt-count">…</span>
+            </div>
+            <div class="head-actions">
+              <div class="tree-search">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="pt-search" placeholder="Filter by ID or summary" aria-label="Filter tree by ID or summary">
+              </div>
+              <button class="more-btn" type="button" id="pt-expand-all">Expand all</button>
+              <button class="more-btn" type="button" id="pt-collapse-all">Collapse all</button>
+              <div class="seg" role="group" aria-label="Filter by status" id="pt-status">
+                <button type="button" class="seg-btn active" data-status="all" aria-pressed="true">All</button>
+                <button type="button" class="seg-btn" data-status="open" aria-pressed="false">Open</button>
+                <button type="button" class="seg-btn" data-status="closed" aria-pressed="false">Closed</button>
+              </div>
+            </div>
+          </header>
+          <div class="tree-viewport" id="pt-viewport" aria-label="RA-OP node tree">
+            <div class="tree-canvas" id="pt-canvas">
+              <svg class="tree-links" id="pt-links" aria-hidden="true"></svg>
+              <!-- ProjectTree 在此追加节点卡片 -->
+            </div>
+            <div class="tree-zoom" role="group" aria-label="Zoom controls">
+              <button type="button" class="tree-zoom-btn" id="pt-zoom-out" aria-label="Zoom out">−</button>
+              <button type="button" class="tree-zoom-btn tree-zoom-val" id="pt-zoom-reset" title="Reset zoom">100%</button>
+              <button type="button" class="tree-zoom-btn" id="pt-zoom-in" aria-label="Zoom in">+</button>
+            </div>
+            <div class="tree-hint" aria-hidden="true">Drag to pan · Scroll to zoom</div>
+            <div class="tx-empty tree-empty" id="pt-empty" hidden>
+              <p class="tx-empty-title">No RA-OPs match the current filters</p>
+              <p class="tx-empty-sub">Try another status or search term, or clear the date filter above.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============================== 详情抽屉 ============================== -->
+<div class="drawer-scrim" id="drawer-scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="drawer-kind">
+  <header class="drawer-head">
+    <span class="drawer-kind" id="drawer-kind">RA-OP</span>
+    <button class="drawer-close" id="drawer-close" aria-label="Close details">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </header>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<!-- 轻提示：定位结果 / 自动清除过滤等一次性反馈 -->
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
