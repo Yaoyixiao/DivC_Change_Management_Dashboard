@@ -1,26 +1,22 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-19T22:14:20+08:00",
+  "generated_at": "2026-10-01T14:28:56+08:00",
   "status": "ready",
-  "root_query_definition": "(relationship[\"ID\"] backwards forwards using [\"ALM_Planned For Delivery\"] = 8145206)",
+  "config_file": "ECR_Config.xlsx",
   "files": {
     "database": "dashboard.db",
     "excel": "data.xlsx",
     "schema": "dashboard_schema.json"
   },
   "counts": {
-    "ra_op": 106,
-    "parent_op": 108,
-    "child_op": 657,
-    "deliveries": 178,
-    "change_requests": 713,
-    "builds": 370
+    "ecr": 10,
+    "work_item": 129,
+    "action": 24,
+    "build": 5
   },
   "relationship_counts": {
-    "ra_op_parent_op": 112,
-    "ra_op_child_op": 666,
-    "related_delivery": 621,
-    "related_change_request": 572,
-    "change_request_build": 831
+    "work_items": 132,
+    "actions": 24,
+    "work_item_for": 8
   }
 }

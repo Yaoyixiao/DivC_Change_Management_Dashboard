@@ -1,98 +1,82 @@
 {
   "schema_version": 1,
   "database": "dashboard.db",
-  "date_storage": "ISO-8601 YYYY-MM-DD text",
+  "date_storage": "ISO-8601 YYYY-MM-DD text（仅 *_date 列）",
   "tables": {
-    "ra_op": {
+    "items": {
       "primary_key": "id",
+      "description": "全部实体一张表，kind 区分类型；level 仅 work_item 有值（距 ECR 的 hop 数）",
       "columns": {
         "id": "integer",
+        "kind": "text",
+        "level": "integer",
+        "type": "text",
         "summary": "text",
-        "project": "text"
-      }
-    },
-    "parent_op": {
-      "primary_key": "id",
-      "columns": {
-        "id": "integer",
         "state": "text",
-        "summary": "text",
-        "project": "text"
-      }
-    },
-    "child_op": {
-      "primary_key": "id",
-      "columns": {
-        "id": "integer",
-        "state": "text",
-        "summary": "text",
-        "project": "text"
-      }
-    },
-    "deliveries": {
-      "primary_key": "id",
-      "columns": {
-        "id": "integer",
-        "summary": "text",
-        "project": "text",
-        "target_date": "date"
-      }
-    },
-    "change_requests": {
-      "primary_key": "id",
-      "columns": {
-        "id": "integer",
-        "state": "text",
-        "summary": "text",
-        "project": "text",
-        "team": "text",
-        "owners": "text"
-      }
-    },
-    "builds": {
-      "primary_key": "id",
-      "columns": {
-        "id": "integer",
-        "summary": "text",
-        "project": "text",
-        "target_date": "date",
+        "owners": "text",
+        "created_date": "date",
+        "planned_start_date": "date",
         "planned_completion_date": "date",
-        "maturity_level": "text"
+        "team": "text",
+        "work_items": "text",
+        "work_item_for": "text",
+        "spawns": "text",
+        "spawned_by": "text",
+        "closed_date": "date",
+        "review_owners_ref": "text",
+        "planned_prepared_date": "date",
+        "review_planned_start_date_ref": "text",
+        "review_planned_completion_date_ref": "text",
+        "review_cycle_count": "text",
+        "project": "text",
+        "defined_state_duration": "text",
+        "planned_state_duration": "text",
+        "started_state_duration": "text",
+        "implemented_state_duration": "text",
+        "prepared_state_duration": "text",
+        "overdue_planned_completion_date": "date",
+        "overdue_first_build_date": "date",
+        "affected_objects": "text",
+        "planned_effort": "text",
+        "first_build_date": "date",
+        "remaining_effort": "text",
+        "change_request_for": "text",
+        "rollup_actual_effort": "text",
+        "rollup_planned_effort": "text",
+        "rough_effort_estimation": "text",
+        "classification": "text",
+        "maturity_level": "text",
+        "target_date": "date",
+        "analysis_target_date": "date",
+        "analysers": "text",
+        "action_for": "text",
+        "actions": "text"
       }
     },
-    "ra_op_parent_op": {
+    "edges": {
+      "primary_key": [
+        "parent_id",
+        "child_id",
+        "relation"
+      ],
+      "description": "显式关系边；relation 取值见 relations",
       "columns": {
-        "ra_op_id": "integer",
-        "parent_op_id": "integer"
-      }
-    },
-    "ra_op_child_op": {
-      "columns": {
-        "ra_op_id": "integer",
-        "child_op_id": "integer"
-      }
-    },
-    "related_delivery": {
-      "columns": {
-        "related_id": "integer",
-        "delivery_id": "integer"
-      }
-    },
-    "related_change_request": {
-      "columns": {
-        "related_id": "integer",
-        "change_request_id": "integer"
-      }
-    },
-    "change_request_build": {
-      "columns": {
-        "change_request_id": "integer",
-        "build_id": "integer"
+        "parent_id": "integer",
+        "child_id": "integer",
+        "relation": "text"
       }
     }
   },
-  "views": [
-    "v_related_detail",
-    "v_change_request_detail"
-  ]
+  "kinds": [
+    "ecr",
+    "work_item",
+    "action",
+    "build"
+  ],
+  "relations": [
+    "work_items",
+    "actions",
+    "work_item_for"
+  ],
+  "generated_at": "2026-10-01T14:28:56+08:00"
 }
