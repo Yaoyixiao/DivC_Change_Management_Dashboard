@@ -179,7 +179,29 @@ payload = {
     },
 }
 
+# Graph view payload: flat nodes + the three edge relations, so the graph can
+# dedupe shared entities into single nodes with multi-parent cross edges
+# (decision #35). The tree-embedded DATA above duplicates shared WIs per ECR
+# and carries no builds — the graph must read from here, not from DATA.
+graph_nodes = []
+for it in items.values():
+    n = {
+        "id": it["id"], "kind": it["kind"], "type": it["type"],
+        "state": it["state"], "open": is_open(it["state"]),
+        "summary": it["summary"], "created": it["created_date"] or None,
+    }
+    if it["kind"] == "work_item" and it["level"] is not None:
+        n["level"] = it["level"]
+    graph_nodes.append(n)
+graph_nodes.sort(key=lambda n: n["id"])
+graph_edges = {rel: [] for rel in ("work_items", "actions", "work_item_for")}
+for r in con.execute("SELECT relation, parent_id, child_id FROM edges ORDER BY parent_id, child_id"):
+    if r["relation"] in graph_edges:
+        graph_edges[r["relation"]].append([r["parent_id"], r["child_id"]])
+graph = {"nodes": graph_nodes, "edges": graph_edges, "generatedAt": generated_at}
+
 data_js = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+graph_js = json.dumps(graph, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 fonts_css = FONTS.read_text(encoding="utf-8") if FONTS.exists() else ""
 
 html = PAGE.read_text(encoding="utf-8")
@@ -187,6 +209,14 @@ lines = html.split("\n")
 hits = [i for i, l in enumerate(lines) if l.startswith("const DATA = ")]
 assert len(hits) == 1, f"expected exactly one DATA line, found {len(hits)}"
 lines[hits[0]] = "const DATA = " + data_js + ";"
+# GRAPH line sits right after DATA; replaced in place on rebuilds, inserted
+# after DATA on first build (design edits elsewhere survive either way)
+ghits = [i for i, l in enumerate(lines) if l.startswith("const GRAPH = ")]
+graph_line = "const GRAPH = " + graph_js + ";"
+if ghits:
+    lines[ghits[0]] = graph_line
+else:
+    lines.insert(hits[0] + 1, graph_line)
 html = "\n".join(lines)
 if "/*__FONTS__*/" in html:
     html = html.replace("/*__FONTS__*/", fonts_css)
@@ -201,4 +231,6 @@ print("WI:", len(wi_all), "| with effort:", len(efforted),
       "| effort via rollup fallback:", fallback,
       "| CR-type WI:", sum(1 for it in wi_all if it["type"] == CR_TYPE))
 print("plannedTotal:", payload["agg"]["plannedTotal"], "actualTotal:", payload["agg"]["actualTotal"])
+print("GRAPH nodes:", len(graph_nodes), "| edges:",
+      {k: len(v) for k, v in graph["edges"].items()})
 print("size:", PAGE.stat().st_size, "bytes")

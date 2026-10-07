@@ -7,7 +7,10 @@
 > （data_loader / aggregations / template / app.js）仍是旧 RA-OP 版本，对新库必报错，属预期。
 > 已交付：本文档（内容锁定）、首页视觉设计稿 [design/homepage.html](../design/homepage.html)
 > （由 `.zcode/mockup_build.py` 注入真实快照）、PTC opener 服务（`src/dashboard_opener.py`）与
-> 4 exe 打包（`packaging/build.py`）。取数侧事实以 [data-pipeline.md](data-pipeline.md) 为唯一
+> 4 exe 打包（`packaging/build.py`）。**进行中**：Graph 视图原型——`graph-view` 分支上已实现
+> （2026-10-07 grill 定稿 #34–38；默认全折叠 / 主父挂靠多父 / 表格徽章色板 / 节点点击仅高亮；
+> 实测 168 节点 / 164 边 = 158 实线 + 6 虚线跨列边，手测清单见 workflow.md §4.1）。
+> 取数侧事实以 [data-pipeline.md](data-pipeline.md) 为唯一
 > 权威；旧 dashboard 的模块/交互参考 [ui-components.md](ui-components.md)（schema 部分已过时）。
 
 ---
@@ -190,12 +193,23 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 
 ---
 
-## 6. Graph 视图（内容骨架；交互细节留 UI 会话）
+## 6. Graph 视图（2026-10-07 grill 定稿，见 §10 #34–38）
 
 - **节点**：全 4 kind（当前 168 节点）；**边**：`work_items` 三级链 + `actions` + `work_item_for`。
-- **默认展开**：ECR + L0；更深层与 Action / Build 以**计数徽标**呈现，点击逐层展开。
-- **共享实体**：去重为**单节点多父**（5 Build / 8 边、3 处共享 WI 引用）——这是图谱区别于表格的核心价值。
-- 复用旧版能力：pan / wheel zoom / 节点内搜索 / 状态筛选 / 全部展开收起。
+- **默认展开**：~~ECR + L0~~ → **默认全折叠**（#34）：首屏仅 10 张 ECR 卡，右缘徽标显直接下级数，
+  点击逐层展开；展开态 keyed 持久沿用旧机制。
+- **共享实体**：去重为**单节点多父**（5 Build / 8 边、3 处共享 WI 引用）——这是图谱区别于表格的核心
+  价值。布局采用**主父挂靠 + 跨列连线**（#35）：共享节点只出现一次、挂在首个引用父的子树里，其余父
+  画跨列长边接入（虚线 / 共享标记区分）。
+- **kind 配色**：沿用 Home 表格 ID 徽章色板（#36）——ECR=CR 绿 `#46d6a0`、CR 型 WI=黄 `#ffc24a`、
+  WP=蓝 `#6d8cff`、Action=橙 `#ff8f6d`；Task 型 WI 与 Build 的色实现时补定（不与已锁四色冲突）。
+- **节点点击**：本轮**无动作**（仅选中高亮；#37，详情入口完全后置，与 Home 行点击解耦同思路）。
+- **视觉参照**：旧 ReadAcross 图谱（`Reference/dashboard.html` 的 ProjectTree：横向树 / 240px 节点卡 /
+  右缘 ± 压线展开钮 / enter-leave 动效 / pan-zoom），token 换 Relate（Inter / 画布色 / 圆角，
+  与 design/homepage.html 一致）。
+- 复用旧版能力：pan / wheel zoom / 节点内搜索（命中子树强制展开 + accent 描边）/ 状态筛选
+  （新口径，`ALM_Completed` 属 Closed）/ 全部展开收起。
+- ⌘K 与 Graph 的跳转让位规则（§5 遗留"另议"）**本轮不做**，原型定稿后另议。
 
 ---
 
@@ -226,6 +240,8 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 - ⌘K 搜索需要**扁平实体索引**（WI/Action 按实体去重 + 各自映射父 ECR id），设计稿 `design/homepage.html` 的 `WI_INDEX / ACTION_INDEX` 与 `searchEntities()` 可直接参照；选中定位需要表格行与展开区子项可寻址（`data-id` / `data-kind`）。
 - 需新写的聚合：kind 计数（Totals 卡，实体去重）、rollup effort 汇总、ECR 创建故事线、process_area 分布、team 分布、children 计数、OPEN/CLOSED 分类（含 `ALM_Completed`）。
 - **Planned Effort 展示口径在渲染层解析**（设计稿 `design/homepage.html` + `.zcode/mockup_build.py` 可直接参照）：payload 里 `planned` 保留**自身原值**（卡片/范围聚合用），`effort` 为按 §4 逐行口径解析后的**展示值**（CR 型 → rollup；其余 → 自身值，空则回退 rollup）；表格列读 `effort`，卡片聚合读 `planned`，两字段勿混用。
+- **Graph 原型数据**：现 DATA 仅 Home 形状（`{ecrs, agg}`，ECR 内嵌 children/actions），缺 Build
+  与共享多父边信息——mockup_build.py 需扩展注入图结构（flat nodes + 三类 edges），Home 消费不变。
 - 硬约束不变：单文件自包含 HTML、零前端依赖、手写 SVG、内嵌 Inter、浅色主题、CLI 输出 ASCII-only、4 exe 打包（见 [workflow.md](workflow.md)）。
 - 验证：渲染链路适配后按 [workflow.md §4](workflow.md) 浏览器手测 + `node --check` + inline self-check；取数链路无改动，`selftest_fetch.py` 不受影响。
 
@@ -266,3 +282,8 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 | 31 | **⌘K 选中 WI/Action = 展开整条父链并闪烁该子项的内联行**（2026-10-06，随 #26 的内联行形态调整 #25 的闪烁对象） |
 | 32 | **层级视觉改树形参考线**（2026-10-06 二次调整，细化 #26 的"纯缩进"）：ID 列内每级祖先 1px 垂直参考线（`#e4e4e7`，贯穿子树各行）+ 行自身 11px 肘线，节距 23px/级，视觉依据 `Reference/Table_structure_UI_CSS.txt`（shadcn 式文件树）；仍不加类型标识 |
 | 33 | **参考线末行终止**（2026-10-06 三次调整，细化 #32）：同级**最后一个**子行处该级纵线以圆角弧线肘线收头、不延伸到行底（经典 `├ / └` 树形，依据用户提供的结构树截图）；末行的更深层子树不再携带已终止层级的线；isLast 按排序后的视觉顺序在 flatten 时标记，随排序联动 |
+| 34 | **图谱默认全折叠**（2026-10-07 graph-view grill 轮，覆盖 §6 原文"默认展开 ECR+L0"）：首屏仅 10 张 ECR 卡，右缘徽标显直接下级数，点击逐层展开；展开态 keyed 持久 |
+| 35 | **共享实体布局 = 主父挂靠 + 跨列连线**（2026-10-07）：单节点挂首个引用父的子树，其余父画跨列长边（虚线/共享标记），布局仍按树算 |
+| 36 | **图谱 kind 配色沿用表格徽章色板**（2026-10-07）：ECR=CR 绿 / CR 型 WI=黄 / WP=蓝 / Action=橙；Task 型 WI 与 Build 色实现时补定 |
+| 37 | **图谱节点点击本轮无动作**（2026-10-07）：仅选中高亮，详情入口完全后置 |
+| 38 | **Graph 实现路径 = 原型先行**（2026-10-07，细化 #2/§9）：`graph-view` 分支在 design/homepage.html 上开发 Graph 视图（含 mockup_build.py 注入图数据），原型定稿可先合回 main；渲染链适配（data_loader 重写 + 移植）另立分支。视觉参照旧 ProjectTree（Reference/dashboard.html）+ Relate token；验证以手测清单为主 |
