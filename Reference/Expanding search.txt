@@ -1,0 +1,29 @@
+<!-- expanding-search.html -->
+<div class="exs" data-origin="left">
+  <label class="exs-ico" for="q" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+  </label>
+  <input class="exs-input" id="q" type="search" placeholder="Search anything…" aria-label="Search">
+  <button class="exs-clear" type="button" aria-label="Clear search">✕</button>
+</div>
+<style>
+  html,body{ margin:0; min-height:100%; display:grid; place-items:center; background:#08080A; }
+  .exs{ --accent:#4A6BFF; position:relative; display:flex; align-items:center; height:50px; width:50px; border-radius:999px;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.14); overflow:hidden;
+    transition:width .48s cubic-bezier(.22,.61,.36,1), box-shadow .3s, border-color .3s; }
+  .exs:focus-within,
+  .exs:has(.exs-input:not(:placeholder-shown)){ width:min(680px,92vw); border-color:transparent; box-shadow:0 0 0 2px var(--accent); }
+  .exs-ico{ flex:0 0 50px; height:50px; display:grid; place-items:center; color:#8A8893; cursor:text; transition:color .2s; }
+  .exs:focus-within .exs-ico{ color:var(--accent); }
+  .exs-ico svg{ width:18px; height:18px; }
+  .exs-input{ flex:1; min-width:0; height:100%; background:transparent; border:none; outline:none; color:#F4F2EC; font:15px system-ui,sans-serif; padding:0 6px; }
+  .exs-input::placeholder{ color:#8A8893; }
+  .exs-input::-webkit-search-cancel-button{ display:none; }
+  .exs-clear{ flex:0 0 auto; width:30px; height:30px; margin-right:8px; border:none; border-radius:50%; background:rgba(255,255,255,.06); color:#8A8893; cursor:pointer;
+    opacity:0; transform:scale(.7); pointer-events:none; transition:opacity .2s, transform .2s; }
+  .exs-input:not(:placeholder-shown) ~ .exs-clear{ opacity:1; transform:scale(1); pointer-events:auto; }
+</style>
+<script>
+  var q = document.getElementById('q');
+  document.querySelector('.exs-clear').addEventListener('click', function(){ q.value = ''; q.focus(); });
+</script>

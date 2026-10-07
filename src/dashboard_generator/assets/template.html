@@ -57,11 +57,32 @@
           <p class="page-meta">{{PAGE_META}}</p>
         </div>
         <div class="page-head-right">
+          <!-- 项目过滤器：RA-OP 归属 = 关联 parent OP 的 project（Details 表 Project 列同源），
+               与日期过滤级联同一条链路；下拉面板由 ProjectFilter 渲染 -->
+          <div class="pill pill-project" id="project-filter">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <button type="button" class="proj-trigger" id="project-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="project-panel">
+              <span id="project-label">All projects</span>
+            </button>
+            <button type="button" class="range-clear" id="project-clear" aria-label="Clear project filter" title="Clear project filter">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div class="proj-panel" id="project-panel" hidden>
+              <div class="proj-search">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="project-search" placeholder="Search projects…" aria-label="Search projects" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="project-list" aria-autocomplete="list">
+              </div>
+              <div class="proj-list" id="project-list" role="listbox" aria-multiselectable="true" aria-label="Projects"></div>
+            </div>
+          </div>
           <div class="pill pill-range" id="date-range" role="group" aria-label="Filter by RA-OP created date">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <input type="date" id="date-from" aria-label="From created date">
+            <!-- type=text 自绘：原生 date 控件的占位与弹层随系统/浏览器语言
+                 渲染（中文环境出现「年/月/日」「今天」），改文本框 + 自绘
+                 英文日历弹层（见 app.js 的 DatePicker），文案完全可控 -->
+            <input type="text" id="date-from" class="date-text" placeholder="YYYY-MM-DD" maxlength="10" aria-label="From created date" autocomplete="off" spellcheck="false" inputmode="numeric">
             <span class="range-sep" aria-hidden="true">–</span>
-            <input type="date" id="date-to" aria-label="To created date">
+            <input type="text" id="date-to" class="date-text" placeholder="YYYY-MM-DD" maxlength="10" aria-label="To created date" autocomplete="off" spellcheck="false" inputmode="numeric">
             <button type="button" class="range-clear" id="date-clear" aria-label="Clear date filter" title="Clear date filter">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -214,7 +235,7 @@
             </table>
             <div class="tx-empty" id="rt-empty" hidden>
               <p class="tx-empty-title">No RA-OPs in this view</p>
-              <p class="tx-empty-sub">Try another status, or clear the date filter above.</p>
+              <p class="tx-empty-sub">Try another status, or clear the filters above.</p>
             </div>
             <div class="tx-more" id="rt-more-wrap">
               <button class="more-btn" type="button" id="rt-more">Show more</button>
@@ -258,7 +279,7 @@
             <div class="tree-hint" aria-hidden="true">Drag to pan · Scroll to zoom</div>
             <div class="tx-empty tree-empty" id="pt-empty" hidden>
               <p class="tx-empty-title">No RA-OPs match the current filters</p>
-              <p class="tx-empty-sub">Try another status or search term, or clear the date filter above.</p>
+              <p class="tx-empty-sub">Try another status or search term, or clear the filters above.</p>
             </div>
           </div>
         </section>

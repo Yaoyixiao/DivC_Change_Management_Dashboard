@@ -1,5 +1,11 @@
 # File Map
 
+> **⚠️ 过时声明（2026-10-07）**：本文按旧 RA-OP 看板记录文件职责与函数清单/行数。此后新增
+> `src/dashboard_opener.py`（opener 服务）、`src/opener_only.py`（独立入口）、
+> `src/dashboard_generator/assets/fonts.css`（内嵌 Inter）、`design/homepage.html`（视觉设计稿）、
+> `packaging/build.py`（4 exe 打包）；`assets/app.js`、`styles.css` 也有大量改动。渲染适配
+> 落地后重写本文。
+
 ## Python 端
 
 ### [src/generate_dashboard.py](../src/generate_dashboard.py) — 77 行

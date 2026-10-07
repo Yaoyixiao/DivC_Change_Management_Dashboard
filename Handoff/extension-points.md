@@ -1,5 +1,8 @@
 # Extension Points
 
+> **⚠️ 过时声明（2026-10-07）**：本文的扩展手法基于旧 RA-OP 看板模块。新 dashboard 的实现
+> 起点与扩展备忘见 [dashboard-content.md](dashboard-content.md) §9；适配落地前本文仅作思路参考。
+
 按"加新功能" 的工作量从小到大排序。
 
 ---

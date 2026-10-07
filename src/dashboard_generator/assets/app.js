@@ -35,39 +35,35 @@
 
   // CLOSED_STATES 以聚合端(agg.closed_states)为准，boot 时覆盖默认值；
   // 默认值仅在聚合缺失时兜底（known-issue #1：此前硬编码缺 Rejected/Cancelled）
-  let CLOSED_STATES = new Set(['ALM_Closed', 'ALM_Realized', 'ALM_Checked', 'ALM_Approved', 'ALM_Rejected', 'ALM_Cancelled']);
+  let CLOSED_STATES = new Set(['ALM_Closed', 'ALM_Realized', 'ALM_Rejected', 'ALM_Cancelled']);
   const ACTIVE_STATES = new Set(['ALM_Initiated', 'ALM_Defined', 'ALM_Analysed', 'ALM_Started', 'ALM_Planned']);
   const FAILED_STATES = new Set(['ALM_Rejected', 'ALM_Cancelled']);
 
-  // PTC Integrity Web deep-link：把 RA-OP / Child OP / Child CR 的 ID 接到
-  // HTTPS Web Integrity 地址，点开即在新标签页打开对应 item。
-// 之前用 `integrity://` 自定义协议时，企业部署的 Mimecast URL Rewriting 会
-// 在浏览器内把含 `skobde-mks-im.kobde.trw.com` 的 URL 改写成它的包装地址，
-// PTC 客户端拿到后报 `MS154475: Incorrect URL format`。改成 HTTPS Web 版后
-// 走的是普通 HTTPS 派发，不会触发自定义协议派发路径，浏览器原生处理。
+  // PTC Integrity deep-link：把 RA-OP / Child OP / Child CR 的 ID 接到自定义协议
+  // 地址，由本地 opener 服务通过 OS-level ShellExecute 派发给桌面客户端。
+//
+// 浏览器内直接派发 `integrity://` 会被企业 Mimecast 改写成包装地址（导致
+// `MS154475: Incorrect URL format`），所以页面里的 JS 派发被绕开——点击 ID 时
+// 改走 fetch 到 127.0.0.1:8766，由 opener 服务在浏览器外进程里跑
+// `cmd /c start "" "<URL>"`。这一步不在浏览器里，Mimecast 看不到、改不到，
+// 所以 `integrity://` 自定义协议 URL 现在可以放心用：ShellExecute 会按注册表
+// 把 integrity 派发给 PTC RV&S 桌面客户端。
   const INTEGRITY_HOST = 'skobde-mks-im.kobde.trw.com:7001';
-  const integrityUrl = (id) => `https://${INTEGRITY_HOST}/im/issues?selection=${encodeURIComponent(String(id))}`;
+  const integrityUrl = (id) => `integrity://${INTEGRITY_HOST}/im/viewissue?selection=${encodeURIComponent(String(id))}`;
 
   // ===============================================================
   // Summary — 4 KPI metrics cascaded from filtered RA-OPs
   // ===============================================================
   const Summary = {
-    _range: { from: '', to: '' }, // RA-OP created date interval; both empty = all time
+    // 共享过滤快照：RA-OP 创建日期区间 + 选中项目集合；均空 = 全部时间 / 全部项目
+    _filters: { range: { from: '', to: '' }, proj: new Set() },
 
     _cascade(agg, data) {
-      // RA-OP time map (created date, subtree target_date fallback)
-      const t = agg.ra_op_time || {};
-      const { from, to } = this._range;
-
-      // Filter RA-OPs by created-date interval (ISO strings compare lexicographically)
+      const f = this._filters;
+      // RA 层：日期区间 + 存在命中子项目的 CHILD OP（ISO 日期串按字典序比较）
       const raIds = new Set();
       for (const ra of data.ra_ops) {
-        if (!from && !to) {
-          raIds.add(ra.id);
-        } else {
-          const d = t[ra.id];
-          if (d && (!from || d >= from) && (!to || d <= to)) raIds.add(ra.id);
-        }
+        if (raOpPasses(ra.id, agg, data, f)) raIds.add(ra.id);
       }
 
       // Index edges for cascade
@@ -88,9 +84,18 @@
       }
 
       // Cascade
+      // CHILD 层：项目激活时只保留子项目命中的 CHILD OP——同一上游
+      // RA-OP 下兄弟项目的 CHILD OP 一并裁剪，不进入链路统计
+      const projActive = f.proj.size > 0;
+      const opProj = projActive
+        ? new Map((data.child_ops || []).map((c) => [c.id, c.project]))
+        : null;
       const childIds = new Set();
       for (const rid of raIds) {
-        for (const cid of raToChild.get(rid) || []) childIds.add(cid);
+        for (const cid of raToChild.get(rid) || []) {
+          if (projActive && !f.proj.has(opProj.get(cid))) continue;
+          childIds.add(cid);
+        }
       }
       const crIds = new Set();
       for (const cid of childIds) {
@@ -115,23 +120,10 @@
       };
     },
 
-    _initDateInputs(agg) {
-      const fromEl = $('#date-from');
-      const toEl = $('#date-to');
-      if (!fromEl || !toEl) return;
-      // constrain both inputs to the created-date span present in the data
-      const dates = Object.values(agg.ra_op_time || {})
-        .filter((d) => typeof d === 'string' && d.length >= 10)
-        .sort();
-      if (dates.length) {
-        fromEl.min = toEl.min = dates[0];
-        fromEl.max = toEl.max = dates[dates.length - 1];
-      }
-    },
-
     _renderTrend(pillEl, filtered, total) {
       if (!pillEl) return;
-      if (!this._range.from && !this._range.to) {
+      const f = this._filters;
+      if (!f.range.from && !f.range.to && !f.proj.size) {
         pillEl.textContent = '—';
         pillEl.classList.add('placeholder');
       } else {
@@ -143,8 +135,7 @@
     render(agg, data) {
       if (!agg || !data) return;
 
-      this._range = readDateRange();
-      this._initDateInputs(agg);
+      this._filters = readFilters();
 
       const c = this._cascade(agg, data);
 
@@ -167,6 +158,14 @@
       $('#m-child-sub').textContent = `linked to ${fmt.int(c.ra)} RA-OP${c.ra === 1 ? '' : 's'}`;
       $('#m-cr-sub').textContent     = `under ${fmt.int(c.child)} child-OP${c.child === 1 ? '' : 's'}`;
       $('#m-build-sub').textContent  = `under ${fmt.int(c.cr)} CR${c.cr === 1 ? '' : 's'}`;
+
+      // RA-OP 副标题跟随项目过滤：单个显示项目名（图表同款「末两段」约定），
+      // 多个按数量折叠
+      const proj = this._filters.proj;
+      $('#m-ra-sub').textContent =
+        proj.size === 1 ? `in ${fmt.project([...proj][0])}`
+        : proj.size > 1 ? `in ${fmt.int(proj.size)} projects`
+        : 'in selected range';
     },
   };
 
@@ -198,31 +197,35 @@
   // ProjectStateChart — Hero chart with 2-level drill-down
   // Level 1 (top): Open / Closed (2 segments per bar)
   // Level 2: drill into specific states of the clicked category
-  // Bars follow the shared RA-OP created-date filter (readDateRange)
+  // Bars follow the shared filter (readFilters: created-date range + project)
   // ===============================================================
   const ProjectStateChart = {
     _view: 'top', // 'top' | 'open' | 'closed'
 
-    // 与 Summary / DetailsTable 同口径：区间命中 RA-OP（ra_op_time），
-    // 级联到其 Child OP 后按 project × state 重算矩阵；无筛选时直接用构建期聚合
-    _cpsForRange(agg, data) {
+    // 与 Summary / DetailsTable 同口径：共享过滤命中 RA-OP 后，CHILD 层
+    // 只统计子项目命中的 CHILD OP（项目激活时兄弟项目不进柱状图，
+    // X 轴只剩选中项目）；无任何过滤时直接用构建期聚合
+    _cpsForFilters(agg, data) {
       const base = agg.child_op_by_project_state;
       if (!base) return base;
-      const { from, to } = readDateRange();
-      if (!from && !to) return base;
+      const f = readFilters();
+      if (!f.range.from && !f.range.to && !f.proj.size) return base;
 
-      const raTime = agg.ra_op_time || {};
       const raIds = new Set();
       for (const ra of data.ra_ops || []) {
-        const d = raTime[ra.id];
-        if (d && (!from || d >= from) && (!to || d <= to)) raIds.add(ra.id);
+        if (raOpPasses(ra.id, agg, data, f)) raIds.add(ra.id);
       }
 
+      const byId = new Map((data.child_ops || []).map((c) => [c.id, c]));
       const childIds = new Set();
       for (const e of data.edges.ra_to_child || []) {
-        if (raIds.has(e.ra_op_id)) childIds.add(e.child_op_id);
+        if (!raIds.has(e.ra_op_id)) continue;
+        if (f.proj.size) {
+          const c = byId.get(e.child_op_id);
+          if (!c || !f.proj.has(c.project)) continue;
+        }
+        childIds.add(e.child_op_id);
       }
-      const byId = new Map((data.child_ops || []).map((c) => [c.id, c]));
 
       const perProject = new Map(); // project -> Map(state -> count)
       const stateTotals = new Map();
@@ -250,7 +253,7 @@
 
     render(agg, data) {
       if (!agg) return;
-      const cps = this._cpsForRange(agg, data);
+      const cps = this._cpsForFilters(agg, data);
       if (!cps || !cps.projects) return;
 
       // 记住渲染上下文:图例钻取与气泡卡片都从最近的筛选结果取数
@@ -259,10 +262,59 @@
       this._cps = cps;
       this._hidePop();
 
-      const { projects, states: allStates, matrix, totals } = cps;
+      const { projects: baseProjects, states: allStates, matrix: baseMatrix, totals: baseTotals } = cps;
       const sc = agg.state_colors || {};
       const openStates   = new Set(agg.open_states   || []);
       const closedStates = new Set(agg.closed_states || []);
+
+      // ---- determine segment definitions based on view
+      let segsDef; // [{ key, states: [...], displayName }]
+      if (this._view === 'top') {
+        segsDef = [
+          { key: 'Open',   states: [...openStates],   color: '#ffa64d', displayName: 'Open' },
+          { key: 'Closed', states: [...closedStates], color: '#16a34a', displayName: 'Closed' },
+        ];
+      } else {
+        const statesList = this._view === 'open'
+          ? [...openStates]
+          : [...closedStates];
+        // order by global count desc, but keep only those present in cps.states
+        const stateCounts = statesList.map((s) => ({
+          state: s,
+          count: allStates.includes(s)
+            ? baseMatrix.reduce((sum, row) => sum + (row[allStates.indexOf(s)] || 0), 0)
+            : 0,
+        }));
+        stateCounts.sort((a, b) => b.count - a.count);
+        segsDef = stateCounts.map(({ state, count }) => ({
+          key: state,
+          states: [state],
+          color: sc[state] || '#9ca3af',
+          displayName: state.replace(/^ALM_/, ''),
+          _count: count,
+        }));
+      }
+
+      // ---- x 轴排序：按当前视图的度量重排（top=项目总数，钻取=该类合计）。
+      // this._sortDir 由图例行的排序按钮切换（'desc' 默认 / 'asc'），
+      // 升序时零值柱仍沉底，避免"从零开始"的观感；平级沿用原序（总数倒序）。
+      if (!this._sortDir) this._sortDir = 'desc';
+      const viewCount = baseProjects.map((_, i) =>
+        segsDef.reduce((s, sd) => s + sd.states.reduce((t, st) => {
+          const j = allStates.indexOf(st);
+          return t + (j >= 0 ? (baseMatrix[i][j] || 0) : 0);
+        }, 0), 0));
+      const order = baseProjects.map((_, i) => i).sort((a, b) => {
+        const va = viewCount[a], vb = viewCount[b];
+        if (!va && !vb) return a - b;
+        if (!va) return 1;  // 零值沉底
+        if (!vb) return -1;
+        return (this._sortDir === 'asc' ? va - vb : vb - va) || a - b;
+      });
+      const pick = (arr) => order.map((k) => arr[k]);
+      const projects = pick(baseProjects);
+      const matrix   = pick(baseMatrix);
+      const totals   = pick(baseTotals);
 
       // Per-project Open / Closed counts (used for legend in Level 1)
       const projectOC = projects.map((_, i) => {
@@ -276,34 +328,6 @@
       });
       const totalOpen   = projectOC.reduce((s, x) => s + x.open, 0);
       const totalClosed = projectOC.reduce((s, x) => s + x.closed, 0);
-
-      // ---- determine segment definitions based on view
-      let segsDef; // [{ key, states: [...], displayName }]
-      if (this._view === 'top') {
-        segsDef = [
-          { key: 'Open',   states: [...openStates],   color: '#f59e0b', displayName: 'Open' },
-          { key: 'Closed', states: [...closedStates], color: '#16a34a', displayName: 'Closed' },
-        ];
-      } else {
-        const statesList = this._view === 'open'
-          ? [...openStates]
-          : [...closedStates];
-        // order by global count desc, but keep only those present in cps.states
-        const stateCounts = statesList.map((s) => ({
-          state: s,
-          count: allStates.includes(s)
-            ? matrix.reduce((sum, row) => sum + (row[allStates.indexOf(s)] || 0), 0)
-            : 0,
-        }));
-        stateCounts.sort((a, b) => b.count - a.count);
-        segsDef = stateCounts.map(({ state, count }) => ({
-          key: state,
-          states: [state],
-          color: sc[state] || '#94a3b8',
-          displayName: state.replace(/^ALM_/, ''),
-          _count: count,
-        }));
-      }
 
       // ---- x-axis labels: full names when they fit, rotate/truncate only as fallback
       const fullProj = (p) => (p === '__other__' ? 'Other' : p);
@@ -319,13 +343,16 @@
       const labelWidths = labelNames.map(labelW);
       const maxLabelW = Math.max(...labelWidths, 0);
 
-      // ---- geometry: fixed min slot width keeps labels readable; the svg grows
-      // with the project count and the container scrolls horizontally.
-      const H = 420;
+      // ---- geometry: 宽高实测自宿主容器(.lg-chart 的高度由 CSS clamp 随视口
+      // 伸缩),窗口缩放/侧栏收展时由 init() 里的 ResizeObserver 触发重渲染;
+      // 最小 slot 宽度保证标签可读,项目多时 svg 仍会增宽、容器横向滚动。
+      const chartHost = $('#lg-chart-host');
+      const availW = Math.max(480, (chartHost && chartHost.clientWidth) || 1200);
+      const H = Math.round(Math.max(300, (chartHost && chartHost.clientHeight) || 420));
       const padL = 32, padR = 32, padT = 30;
       const N = projects.length;
-      const slotW = Math.max(96, (1200 - padL - padR) / N);
-      const W = Math.max(1200, padL + padR + N * slotW);
+      const slotW = Math.max(96, (availW - padL - padR) / N);
+      const W = Math.max(availW, padL + padR + N * slotW);
       const barW = Math.min(slotW * 0.55, 50);
       const barR = 5;     // top-corner radius of the topmost segment
       const segGap = 1.5; // hairline gap between stacked segments (bg-colored stroke)
@@ -354,7 +381,7 @@
 
       // ---- bars
       const labelY = H - padB + labelFont + 2;
-      const segStroke = ` style="stroke:var(--surface-2)" stroke-width="${segGap}"`;
+      const segStroke = ` style="stroke:var(--canvas-tint)" stroke-width="${segGap}"`;
       const bars = projects.map((proj, i) => {
         const x = padL + slotW * i + (slotW - barW) / 2;
         const counts = segsDef.map((sd) => sd.states.reduce((s, st) => {
@@ -397,21 +424,33 @@
           <g class="bar-group" data-project="${esc(proj)}">
             ${segs}
             <text x="${(x + barW / 2).toFixed(1)}" y="${(totalY - 8).toFixed(1)}" text-anchor="middle"
-                  font-size="13" font-weight="600" fill="#0f172a"
-                  font-family="-apple-system,Segoe UI,sans-serif">${fmt.int(viewTotal)}</text>
+                  font-size="13" font-weight="600" style="fill:var(--text)"
+                  font-family="Inter,-apple-system,Segoe UI,sans-serif">${fmt.int(viewTotal)}</text>
             <text x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="${labelAngle ? 'end' : 'middle'}"
-                  font-size="${labelFont}" fill="#64748b"
-                  font-family="-apple-system,Segoe UI,sans-serif"${rotateAttr}>${esc(fittedNames[i])}<title>${esc(fullProj(proj))}</title></text>
+                  font-size="${labelFont}" style="fill:var(--muted-2)"
+                  font-family="Inter,-apple-system,Segoe UI,sans-serif"${rotateAttr}>${esc(fittedNames[i])}<title>${esc(fullProj(proj))}</title></text>
           </g>
         `;
       }).join('');
 
       // ---- legend
+      // 排序切换按钮（图例行末尾）：方向跟 this._sortDir，点击翻转让柱子重排
+      const sortAsc = this._sortDir === 'asc';
+      const sortTip = sortAsc
+        ? 'Sorted low to high — click to sort high to low'
+        : 'Sorted high to low — click to sort low to high';
+      const sortBtn = `
+        <button type="button" class="legend-pill sort-pill" data-sort
+                aria-label="${sortTip}" title="${sortTip}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round"
+               style="${sortAsc ? 'transform:rotate(180deg)' : ''}"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
+        </button>`;
       let legendHtml;
       if (this._view === 'top') {
         legendHtml = `
           <button type="button" class="legend-pill legend-pill-lg active" data-cat="Open">
-            <span class="legend-dot" style="background:#f59e0b"></span>
+            <span class="legend-dot" style="background:#ffa64d"></span>
             <span>Open</span>
             <span class="legend-count">${fmt.int(totalOpen)}</span>
           </button>
@@ -420,6 +459,7 @@
             <span>Closed</span>
             <span class="legend-count">${fmt.int(totalClosed)}</span>
           </button>
+          ${sortBtn}
         `;
       } else {
         const backLabel = '< Open / Closed';
@@ -433,6 +473,7 @@
         legendHtml = `
           <button type="button" class="legend-back" data-cat="top">${backLabel}</button>
           ${detailPills}
+          ${sortBtn}
         `;
       }
 
@@ -465,6 +506,12 @@
           this.render(this._agg, this._data);
         };
       });
+      $$('.sort-pill[data-sort]').forEach((btn) => {
+        btn.onclick = () => {
+          this._sortDir = this._sortDir === 'asc' ? 'desc' : 'asc';
+          this.render(this._agg, this._data);
+        };
+      });
     },
 
     // =============================================================
@@ -482,6 +529,17 @@
       host.appendChild(pop);
       this._pop = pop;
 
+      // 气泡卡片「Details」：把该柱子项目设为选择器选中项（替换当前
+      // 选中集合），收起气泡并跳转 Details 表
+      pop.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.lg-pop-details');
+        if (!btn) return;
+        const changed = ProjectFilter.setSingle(btn.dataset.project);
+        this._hidePop();
+        if (changed) refreshAll();
+        Pages.show('details');
+      });
+
       host.addEventListener('click', (ev) => {
         const g = ev.target.closest('.bar-group');
         if (!g) { this._hidePop(); return; }
@@ -498,6 +556,25 @@
       document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && this._openBar) this._hidePop();
       });
+
+      // 容器尺寸变化(窗口缩放/侧栏收展/设备转向)→ 按新宽高重排几何;
+      // rAF 合帧:过渡期间至多每帧一次重渲染。render 只依赖宿主 clientWidth
+      // 与 CSS 决定的 clientHeight,不会反过来改变宿主尺寸,无回环。
+      if (typeof ResizeObserver !== 'undefined' && !this._ro) {
+        let lastW = host.clientWidth, lastH = host.clientHeight, raf = 0;
+        this._ro = new ResizeObserver(() => {
+          if (host.clientWidth === lastW && host.clientHeight === lastH) return;
+          lastW = host.clientWidth;
+          lastH = host.clientHeight;
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => {
+            if (!this._agg) return;
+            try { this.render(this._agg, this._data); }
+            catch (e) { console.error('ProjectStateChart (resize):', e); }
+          });
+        });
+        this._ro.observe(host);
+      }
     },
 
     _showPopover(g) {
@@ -526,7 +603,7 @@
         : (proj.split('/').filter(Boolean).slice(-2).join('/') || proj || '—');
 
       const rowsHtml = rows.map((r) => {
-        const color = sc[r.state] || '#94a3b8';
+        const color = sc[r.state] || '#9ca3af';
         const name = String(r.state).replace(/^ALM_/, '');
         const pct = (r.count / maxRow * 100).toFixed(1);
         return `
@@ -548,8 +625,9 @@
         </header>
         <ul class="lg-pop-rows">${rowsHtml || '<li class="lg-pop-empty">No child OPs</li>'}</ul>
         <footer class="lg-pop-foot">
-          <span><i style="background:#f59e0b"></i>Open ${fmt.int(open)}</span>
+          <span><i style="background:#ffa64d"></i>Open ${fmt.int(open)}</span>
           <span><i style="background:#16a34a"></i>Closed ${fmt.int(closed)}</span>
+          ${proj !== '__other__' ? `<button type="button" class="lg-pop-details" data-project="${esc(proj)}" title="Open Details filtered to this project">Details</button>` : ''}
         </footer>
       `;
 
@@ -621,7 +699,9 @@
   //   L2 Child CR：Summary 列 = summary，ID 列 = id，
   //                Project 列 = team，Child State 列 = state 徽章。
   // 状态筛选（Open = 有未闭环 child OP，Closed = child OP 全部闭环）
-  // 与日期过滤（agg.ra_op_time）只作用于 RA-OP 层。
+  // 与共享过滤（日期 agg.ra_op_time / 项目 = 子链 CHILD OP project）作用
+  // 于 RA-OP 层；项目激活时展开层只显示选中项目的 CHILD OP（兄弟项目
+  // 裁剪），Child State 列计数同口径。
   // 展开状态键带实体前缀（ra:/op:），跨重渲染保持。
   // ===============================================================
   const DetailsTable = {
@@ -668,12 +748,14 @@
       const expandAll = $('#rt-expand-all');
       if (expandAll) {
         expandAll.addEventListener('click', () => {
-          const { byRa, stats } = this._buildChildIndex(agg, data);
+          const idx = this._buildChildIndex(agg, data);
           const crIndex = this._buildCrIndex(agg, data);
+          const f = readFilters();
           const page = this._filtered(agg, data).slice(0, this._shown);
           for (const p of page) {
-            if ((stats[p.id]?.total || 0) > 0) this._expanded.add(`ra:${p.id}`);
-            for (const cid of byRa[p.id] || []) {
+            const kids = this._keptKids(p.id, idx, f);
+            if (kids.length > 0) this._expanded.add(`ra:${p.id}`);
+            for (const cid of kids) {
               if ((crIndex.byOp[cid] || []).length > 0) this._expanded.add(`op:${cid}`);
             }
           }
@@ -761,7 +843,8 @@
       return this._crIndex;
     },
 
-    // ra_op → 关联 parent OP 的 project 字段
+    // ra_op → 关联 parent OP 的 project 字段（首条边）——Details 表 Project
+    // 列的取值；与选择器的 CHILD OP 项目口径（raChildProjectIndex）相互独立
     _buildParentProjects(agg, data) {
       if (this._parentProjects) return this._parentProjects;
       const projById = new Map();
@@ -775,23 +858,37 @@
       return map;
     },
 
+    // 项目过滤激活时的「可见子集」：RA-OP 的 child OP 先按选中项目裁剪
+    // （兄弟项目不进表格展开层），再计 open/total——Child State 列与
+    // 状态筛选同口径
+    _keptKids(raId, idx, f) {
+      const kids = idx.byRa[raId] || [];
+      if (!f.proj.size) return kids;
+      return kids.filter((cid) => f.proj.has(idx.byId.get(cid)?.project));
+    },
+
+    _keptStats(raId, idx, f) {
+      const kids = this._keptKids(raId, idx, f);
+      let open = 0;
+      for (const cid of kids) {
+        if (!CLOSED_STATES.has(idx.byId.get(cid)?.state)) open += 1;
+      }
+      return { total: kids.length, open };
+    },
+
     _filtered(agg, data) {
-      const range = readDateRange();
-      const raTime = (agg && agg.ra_op_time) || {};
-      const { stats } = this._buildChildIndex(agg, data);
+      const f = readFilters();
+      const idx = this._buildChildIndex(agg, data);
       let rows = (data.ra_ops || []).slice();
-      if (this._status === 'open') rows = rows.filter((p) => (stats[p.id] || { open: 0 }).open > 0);
+      if (this._status === 'open') rows = rows.filter((p) => this._keptStats(p.id, idx, f).open > 0);
       else if (this._status === 'closed') {
         rows = rows.filter((p) => {
-          const s = stats[p.id];
-          return s && s.total > 0 && s.open === 0;
+          const s = this._keptStats(p.id, idx, f);
+          return s.total > 0 && s.open === 0;
         });
       }
-      if (range.from || range.to) {
-        rows = rows.filter((p) => {
-          const d = raTime[p.id];
-          return d && (!range.from || d >= range.from) && (!range.to || d <= range.to);
-        });
+      if (f.proj.size || f.range.from || f.range.to) {
+        rows = rows.filter((p) => raOpPasses(p.id, agg, data, f));
       }
       // 默认按 id 倒序（id 大致随时间递增）；Child State 列被激活排序时，
       // 按关联 child OP 的「未闭环数」排；open 数相同的，按 id 倒序作稳定次序。
@@ -814,7 +911,9 @@
       const tbody = $('#recent-tx-host');
       if (!tbody) return;
       const sc = (agg && agg.state_colors) || {};
-      const { byId, byRa, stats } = this._buildChildIndex(agg, data);
+      const idx = this._buildChildIndex(agg, data);
+      const { byId, byRa } = idx;
+      const f = readFilters();
       const crIndex = this._buildCrIndex(agg, data);
       const parentProj = this._buildParentProjects(agg, data);
       const rows = this._filtered(agg, data);
@@ -871,14 +970,15 @@
         tbody.innerHTML = '';
       } else {
         tbody.innerHTML = shown.map((p) => {
-          const s = stats[p.id] || { total: 0, open: 0 };
+          const s = this._keptStats(p.id, idx, f);
+          const keptKids = this._keptKids(p.id, idx, f);
           const proj = fmt.project(parentProj[p.id]);
           const key = `ra:${p.id}`;
           const expanded = this._expanded.has(key);
           const expander = s.total > 0
             ? `<button type="button" class="tx-expand" data-ra="${key}" aria-expanded="${expanded}" aria-label="${expanded ? 'Hide' : 'Show'} child OPs">${chevSvg}</button>`
             : '<span class="tx-expand-spacer"></span>';
-          const childRows = expanded ? (byRa[p.id] || []).map(opRowHtml).join('') : '';
+          const childRows = expanded ? keptKids.map(opRowHtml).join('') : '';
           const raIdHtml = `<a class="tx-id-link" href="${esc(integrityUrl(p.id))}" target="_blank" rel="noopener noreferrer" title="Open ${esc(p.id)} in PTC Integrity">${esc(p.id)}</a>`;
           return `
             <tr data-ra-id="${esc(p.id)}">
@@ -962,14 +1062,28 @@
         }
       }
 
-      // 日期过滤遮蔽目标 → 清空日期（clearDateFilter 内部会 reset+render）
-      const range = readDateRange();
+      // 共享过滤遮蔽目标 → 清掉造成遮蔽的那一枚（clear* 内部会 reset+render）
+      const f = readFilters();
       let clearedDate = false;
-      if (range.from || range.to) {
+      let clearedProject = false;
+      if (f.range.from || f.range.to) {
         const d = (agg && agg.ra_op_time) ? agg.ra_op_time[raId] : undefined;
-        if (!d || (range.from && d < range.from) || (range.to && d > range.to)) {
+        if (!d || (f.range.from && d < f.range.from) || (f.range.to && d > f.range.to)) {
           clearDateFilter();
           clearedDate = true;
+        }
+      }
+      if (f.proj.size) {
+        // RA 层：子链须命中选中项目；op/cr 目标本身若是未选中项目的
+        // 兄弟 CHILD OP（展开层已裁剪），同样清除过滤保证其可见
+        const idx = this._buildChildIndex(agg, data);
+        const ps = raChildProjectIndex(data)[raId];
+        const raHit = !!ps && [...ps].some((p) => f.proj.has(p));
+        const op = opId ? idx.byId.get(Number(opId)) : null;
+        const opHit = !op || (op.project && f.proj.has(op.project));
+        if (!raHit || !opHit) {
+          ProjectFilter.clear();
+          clearedProject = true;
         }
       }
 
@@ -984,7 +1098,7 @@
       if (opId) this._expanded.add(`op:${opId}`);
 
       this.render(agg, data);
-      return { found: true, raId, opId, clearedDate };
+      return { found: true, raId, opId, clearedDate, clearedProject };
     },
   };
 
@@ -996,8 +1110,9 @@
   // 状态筛选与 DetailsTable 同语义（open = 有未闭环 child OP，
   // closed = 有 child OP 且全部闭环）；搜索按 ID/摘要命中：命中节点
   // 整棵子树展开显示（上下游链路不裁剪），未命中节点仅保留通向命中
-  // 的路径；日期区间过滤 RA-OP 根（语义与 Details 一致，
-  // 激活时排除无日期的 RA-OP）；画布支持拖拽平移与滚轮/按钮缩放。
+  // 的路径；共享过滤（日期区间 + 项目）作用于 RA-OP 根，项目激活时
+  // CHILD OP 层按选中项目裁剪（同一 RA 下兄弟项目不进树，节点计数
+  // 同口径）；画布支持拖拽平移与滚轮/按钮缩放。
   // 默认状态：只显示 RA-OP 根节点（全部折叠）。
   // ===============================================================
   const ProjectTree = {
@@ -1157,18 +1272,28 @@
         : idx.crById.get(n.id);
     },
 
+    // 项目过滤下的可见 CHILD OP 子集（未激活 = 全部）：
+    // 兄弟项目（同一上游 RA-OP 下未选中的项目）不进树
+    _keptOps(raId) {
+      const idx = this._index();
+      const ops = idx.opsOfRa.get(raId) || [];
+      const f = this._f;
+      if (!f || !f.proj.size) return ops;
+      return ops.filter((oid) => f.proj.has(idx.opById.get(oid)?.project));
+    },
+
     _kids(n) {
       const idx = this._index();
-      if (n.kind === 'ra') return (idx.opsOfRa.get(n.id) || []).map((id) => ({ kind: 'op', id }));
+      if (n.kind === 'ra') return this._keptOps(n.id).map((id) => ({ kind: 'op', id }));
       if (n.kind === 'op') return (idx.crsOfOp.get(n.id) || []).map((id) => ({ kind: 'cr', id }));
       return [];
     },
 
     _kindColor(kind) {
       const nc = (this._agg && this._agg.node_colors) || {};
-      return kind === 'ra' ? (nc.ra_op || '#7c3aed')
-        : kind === 'op' ? (nc.child_op || '#06b6d4')
-        : (nc.change_request || '#22c55e');
+      return kind === 'ra' ? (nc.ra_op || '#7c6cf6')
+        : kind === 'op' ? (nc.child_op || '#0ea5e9')
+        : (nc.change_request || '#16a34a');
     },
 
     // ---------- 筛选 ----------
@@ -1191,22 +1316,27 @@
     _roots() {
       const agg = this._agg;
       const idx = this._index();
-      const range = readDateRange();
-      const raTime = (agg && agg.ra_op_time) || {};
+      const f = this._f = readFilters();
+      // 状态口径随项目裁剪：只统计可见 CHILD OP 的 open/total
+      const keptStats = (id) => {
+        const kids = this._keptOps(id);
+        let open = 0;
+        for (const oid of kids) {
+          if (!CLOSED_STATES.has(idx.opById.get(oid)?.state)) open += 1;
+        }
+        return { total: kids.length, open };
+      };
       let rows = Array.from(idx.raById.values());
       if (this._status === 'open') {
-        rows = rows.filter((p) => (idx.raStats[p.id] || { open: 0 }).open > 0);
+        rows = rows.filter((p) => keptStats(p.id).open > 0);
       } else if (this._status === 'closed') {
         rows = rows.filter((p) => {
-          const s = idx.raStats[p.id];
-          return s && s.total > 0 && s.open === 0;
+          const s = keptStats(p.id);
+          return s.total > 0 && s.open === 0;
         });
       }
-      if (range.from || range.to) {
-        rows = rows.filter((p) => {
-          const d = raTime[p.id];
-          return d && (!range.from || d >= range.from) && (!range.to || d <= range.to);
-        });
+      if (f.proj.size || f.range.from || f.range.to) {
+        rows = rows.filter((p) => raOpPasses(p.id, agg, this._data, f));
       }
       if (this._query) rows = rows.filter((p) => this._hasHit({ kind: 'ra', id: p.id }));
       rows.sort((a, b) => Number(b.id) - Number(a.id));
@@ -1216,6 +1346,7 @@
     // 当前筛选下可见的全部节点（忽略展开状态，供 Expand/Collapse all 使用）。
     // 搜索态可见规则与 _layout 一致：命中节点整棵子树、未命中节点仅命中分支
     _allNodes() {
+      this._f = this._f || readFilters();
       const out = [];
       const visit = (n, inMatch) => {
         out.push(n);
@@ -1314,7 +1445,7 @@
       const side = n.kind === 'ra'
         ? (d.created_date ? `<span class="tnode-date">${esc(d.created_date)}</span>` : '')
         : stateBadgeHtml(sc, d.state);
-      const total = n.kind === 'ra' ? (idx.raStats[n.id] || { total: 0 }).total
+      const total = n.kind === 'ra' ? this._keptOps(n.id).length
         : n.kind === 'op' ? (idx.opStats[n.id] || { total: 0 }).total : 0;
       const countHtml = total > 0
         ? `<span class="tnode-count">${fmt.int(total)} ${n.kind === 'ra'
@@ -1352,6 +1483,7 @@
     render() {
       const canvas = $('#pt-canvas');
       if (!canvas || !this._data) return;
+      this._f = readFilters();
       this._ensureNodeH(canvas);
 
       const { nodes, links, W, H } = this._layout();
@@ -1456,8 +1588,9 @@
       const roots = this._roots();
       const countEl = $('#pt-count');
       if (countEl) {
-        const range = readDateRange();
-        const filtered = this._status !== 'all' || this._query || range.from || range.to;
+        const f = readFilters();
+        const filtered = this._status !== 'all' || this._query
+          || !!f.range.from || !!f.range.to || f.proj.size > 0;
         countEl.classList.remove('placeholder');
         countEl.textContent = filtered
           ? `${fmt.int(roots.length)} of ${fmt.int(idx.raById.size)} RA-OPs`
@@ -1907,7 +2040,7 @@
 
   // ===============================================================
   // TopSearch — 顶部搜索（下拉结果面板 + 键盘导航 + Details 定位）
-  // 覆盖全部 6 类实体、大小写不敏感子串匹配，不受日期过滤影响。
+  // 覆盖全部 6 类实体、大小写不敏感子串匹配，不受日期/项目过滤影响。
   // 点击/回车结果一律跳 Details 视图：ra/op/cr 定位自身行；
   // build/delivery/parent_op 经 edges 反查最近可显示关联行并以 toast 注明。
   // ===============================================================
@@ -2068,7 +2201,7 @@
           html += `<div class="search-group-head">${esc(r.def.label)}<span class="search-group-n">· ${n}</span></div>`;
         }
         const it = r.item;
-        const color = nc[r.def.colorKey] || '#64748b';
+        const color = nc[r.def.colorKey] || '#6b7280';
         // 徽章：Build 用 maturity，其余有 state 用 state；无状态实体显示日期
         let badge = '';
         if (r.def.kind === 'build') badge = stateBadgeHtml(mc, it.maturity_level);
@@ -2079,31 +2212,13 @@
         html += `
           <button type="button" class="search-row${i === this._active ? ' active' : ''}" role="option" id="search-opt-${i}" data-idx="${i}" aria-selected="${i === this._active}">
             <span class="search-type" style="background:${esc(color)}" aria-hidden="true"></span>
-            <span class="search-id">${this._hi(String(it.id), this._query)}</span>
-            <span class="search-name">${this._hi(fmt.truncate(String(it.summary || '(no summary)'), 70), this._query)}</span>
+            <span class="search-id">${markHits(String(it.id), this._query)}</span>
+            <span class="search-name">${markHits(fmt.truncate(String(it.summary || '(no summary)'), 70), this._query)}</span>
             ${badge ? `<span class="search-badge">${badge}</span>` : ''}
           </button>`;
       });
       panel.innerHTML = html;
       panel.setAttribute('aria-activedescendant', `search-opt-${Math.max(0, this._active)}`);
-    },
-
-    // 命中高亮：按命中位置切分、逐段 esc 后对命中段包 <mark>，全程转义
-    _hi(text, q) {
-      const s = String(text);
-      const nq = q.toLowerCase();
-      if (!nq) return esc(s);
-      const lower = s.toLowerCase();
-      let out = '';
-      let i = 0;
-      while (i < s.length) {
-        const hit = lower.indexOf(nq, i);
-        if (hit < 0) { out += esc(s.slice(i)); break; }
-        if (hit > i) out += esc(s.slice(i, hit));
-        out += `<mark>${esc(s.slice(hit, hit + nq.length))}</mark>`;
-        i = hit + nq.length;
-      }
-      return out;
     },
 
     _syncActive(panel) {
@@ -2182,8 +2297,8 @@
         this.toast(`Could not locate ${r.def.label} ${r.item.id} in Details`);
         return;
       }
-      if (loc.clearedDate) {
-        this.toast(`Date filter cleared to show ${kindLabel} ${target.id}`);
+      if (loc.clearedDate || loc.clearedProject) {
+        this.toast(`Filter cleared to show ${kindLabel} ${target.id}`);
       }
       const attr = target.kind === 'ra' ? 'data-ra-id' : target.kind === 'op' ? 'data-op-id' : 'data-cr-id';
       const row = $(`#recent-tx-host tr[${attr}="${target.id}"]`);
@@ -2212,22 +2327,439 @@
     },
   };
 
+  // ===============================================================
+  // ProjectFilter — 页头项目过滤器（可搜索多选下拉，与日期 pill 同级共享）
+  // 语义：项目 = RA-OP 子链上 CHILD OP 的 project（child_ops.project，与
+  // CHILD OP 柱状图同源，见 raChildProjectIndex）；RA-OP 命中 = 任一
+  // child OP 的 project 在选中集合内（多选并集），经 raOpPasses 与日期
+  // 区间共用同一条 RA-OP 级联链路。
+  // 选项清单与计数只跟随日期过滤——项目维度不进计数口径，保证选中
+  // 之后仍能搜索、勾选其他项目。交互：触发按钮开合；面板内 ↑↓ 移动
+  // 键盘游标、Enter/点击切换勾选（面板保持打开便于连续勾选）、Esc 关
+  // 回触发器；搜索命中显示名或完整路径并 <mark> 高亮；pill 右缘 × 清
+  // 除全部。勾选框是 aria-selected 的视觉投影，不承载独立交互。触发器
+  // 摘要：单个显示项目名，多个按数量折叠为「N selected」。面板语言对
+  // 齐 .search-panel。
+  // ===============================================================
+  const ProjectFilter = {
+    _selected: new Set(), // 选中的完整 project 路径集合；空 = 全部（不过滤）
+    _open: false,
+    _options: [],  // 当前面板渲染的选项 [{ project, name, count }]
+    _active: -1,   // 键盘游标（区别于 aria-selected 的「已选」态）
+    _panelTimer: null,
+
+    init() {
+      const trigger = $('#project-trigger');
+      const search = $('#project-search');
+      const pill = $('#project-filter');
+      if (!trigger || !search || !pill) return;
+
+      trigger.addEventListener('click', () => {
+        if (this._open) this.close(true); else this.open();
+      });
+      trigger.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          this.open();
+        }
+      });
+
+      search.addEventListener('input', () => this._renderList());
+      search.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+          if (!this._options.length) return;
+          ev.preventDefault();
+          const dir = ev.key === 'ArrowDown' ? 1 : -1;
+          this._active = (this._active + dir + this._options.length) % this._options.length;
+          this._syncActive();
+        } else if (ev.key === 'Enter') {
+          const opt = this._options[this._active];
+          if (opt) {
+            ev.preventDefault();
+            this._toggle(opt);
+          }
+        } else if (ev.key === 'Escape') {
+          ev.stopPropagation(); // 面板的 Esc 不应同时波及抽屉/气泡
+          this.close(true);
+        }
+      });
+
+      $('#project-list')?.addEventListener('click', (ev) => {
+        const row = ev.target.closest('.proj-row');
+        if (!row) return;
+        this._toggle(this._options[Number(row.dataset.idx)]);
+      });
+      // 行内按下鼠标不转移焦点（保持输入框焦点与键盘导航），click 再选择
+      $('#project-panel')?.addEventListener('mousedown', (ev) => {
+        if (ev.target.closest('.proj-row')) ev.preventDefault();
+      });
+
+      $('#project-clear')?.addEventListener('click', () => this.clear());
+
+      // 点击面板外 / 焦点 Tab 出过滤器 → 关闭
+      document.addEventListener('mousedown', (ev) => {
+        if (this._open && !ev.target.closest('.pill-project')) this.close(false);
+      });
+      pill.addEventListener('focusout', (ev) => {
+        if (!this._open) return;
+        if (!pill.contains(ev.relatedTarget)) this.close(false);
+      });
+    },
+
+    open() {
+      const panel = $('#project-panel');
+      const search = $('#project-search');
+      const trigger = $('#project-trigger');
+      if (!panel) return;
+      if (this._panelTimer) { clearTimeout(this._panelTimer); this._panelTimer = null; }
+      this._renderList(); // 每次打开重算计数（跟随当前过滤）并同步选中态
+      panel.hidden = false;
+      // 强制布局提交“未打开”起始样式后同步加 class——过渡动画确定发生
+      panel.getBoundingClientRect();
+      panel.classList.add('open');
+      this._open = true;
+      trigger?.setAttribute('aria-expanded', 'true');
+      search?.setAttribute('aria-expanded', 'true');
+      if (search) { search.value = ''; search.focus(); }
+    },
+
+    close(refocus) {
+      const panel = $('#project-panel');
+      const trigger = $('#project-trigger');
+      const search = $('#project-search');
+      if (!panel || !this._open) return;
+      panel.classList.remove('open');
+      this._panelTimer = setTimeout(() => { panel.hidden = true; }, 160);
+      this._open = false;
+      trigger?.setAttribute('aria-expanded', 'false');
+      search?.setAttribute('aria-expanded', 'false');
+      if (refocus) trigger?.focus();
+    },
+
+    clear() {
+      if (!this._selected.size) return;
+      this._selected.clear();
+      this._syncTrigger();
+      refreshAll();
+    },
+
+    // 用单个项目替换当前选中集合（柱状图气泡卡片的「Details」入口）。
+    // 返回是否发生变化，供调用方决定是否需要刷新。
+    setSingle(project) {
+      const next = project ? new Set([String(project)]) : new Set();
+      const unchanged = next.size === this._selected.size
+        && [...next].every((p) => this._selected.has(p));
+      if (unchanged) return false;
+      this._selected = next;
+      this._syncTrigger();
+      refreshAll();
+      return true;
+    },
+
+    // 选项 = 全部 CHILD OP 项目及其 RA-OP 计数（拥有该子项目 child OP 的
+    // RA-OP 数），按计数倒序、同数按名称升序。计数只跟随日期过滤（项目
+    // 维度不进口径）：否则选中项目后面板只剩它自己，既搜不到也勾不了
+    // 其他项目。
+    _buildOptions() {
+      const agg = AGG();
+      const data = DATA();
+      if (!data) return [];
+      const f = { range: readDateRange(), proj: new Set() };
+      const raProj = raChildProjectIndex(data);
+      const counts = new Map();
+      for (const ra of data.ra_ops || []) {
+        const ps = raProj[ra.id];
+        if (!ps || !raOpPasses(ra.id, agg, data, f)) continue;
+        for (const p of ps) counts.set(p, (counts.get(p) || 0) + 1);
+      }
+      const rows = [...counts.entries()].map(([project, count]) => ({
+        project,
+        count,
+        name: fmt.project(project) || project,
+      }));
+      rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      return rows;
+    },
+
+    _renderList() {
+      const listEl = $('#project-list');
+      const search = $('#project-search');
+      if (!listEl) return;
+      const raw = search ? search.value.trim() : '';
+      const q = raw.toLowerCase();
+      const all = this._buildOptions();
+      // 命中 = 显示名或完整路径（大小写不敏感子串）
+      const opts = !q ? all : all.filter((o) =>
+        o.name.toLowerCase().includes(q) || o.project.toLowerCase().includes(q));
+      this._options = opts;
+      // 键盘游标默认停在首个已选项，否则首行
+      const selFirst = opts.findIndex((o) => this._selected.has(o.project));
+      this._active = selFirst >= 0 ? selFirst : (opts.length ? 0 : -1);
+      listEl.innerHTML = opts.length ? opts.map((o, i) => `
+        <button type="button" class="proj-row" role="option" id="proj-opt-${i}"
+                data-idx="${i}" aria-selected="${this._selected.has(o.project)}"
+                title="${esc(o.project)}">
+          <span class="proj-box" aria-hidden="true"><svg class="proj-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span class="proj-name">${markHits(o.name, raw)}</span>
+          <span class="proj-n">${fmt.int(o.count)}</span>
+        </button>
+      `).join('')
+        : `<div class="proj-empty">No projects match “${esc(raw)}”</div>`;
+      listEl.setAttribute('aria-activedescendant', `proj-opt-${Math.max(0, this._active)}`);
+    },
+
+    _syncActive() {
+      const listEl = $('#project-list');
+      if (!listEl) return;
+      $$('.proj-row', listEl).forEach((el) => {
+        el.classList.toggle('active', Number(el.dataset.idx) === this._active);
+      });
+      listEl.setAttribute('aria-activedescendant', `proj-opt-${Math.max(0, this._active)}`);
+      const el = $(`.proj-row[data-idx="${this._active}"]`, listEl);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    },
+
+    // 勾选/取消一个项目：面板保持打开便于连续勾选，键盘游标停在原行，
+    // 后方仪表盘即时联动刷新
+    _toggle(opt) {
+      if (!opt || !opt.project) return;
+      if (this._selected.has(opt.project)) this._selected.delete(opt.project);
+      else this._selected.add(opt.project);
+      this._syncTrigger();
+      this._renderList();
+      const kept = this._options.findIndex((o) => o.project === opt.project);
+      if (kept >= 0) {
+        this._active = kept;
+        this._syncActive();
+      }
+      refreshAll();
+    },
+
+    // 触发器摘要：单个显示项目名，多个按数量折叠为「N selected」
+    // （避免逐个罗列撑爆 pill），完整清单放 title 悬停可见
+    _syncTrigger() {
+      const label = $('#project-label');
+      const pill = $('#project-filter');
+      if (!label || !pill) return;
+      const n = this._selected.size;
+      if (!n) {
+        label.textContent = 'All projects';
+        label.removeAttribute('title');
+        pill.classList.remove('has-filter');
+      } else if (n === 1) {
+        const only = [...this._selected][0];
+        label.textContent = fmt.project(only) || only;
+        label.title = only;
+        pill.classList.add('has-filter');
+      } else {
+        label.textContent = `${fmt.int(n)} selected`;
+        label.title = [...this._selected].map((p) => fmt.project(p) || p).join(', ');
+        pill.classList.add('has-filter');
+      }
+    },
+  };
+
+  // ===============================================================
+  // DatePicker — 自绘日历弹层。原生 date picker 的月份/星期/「今天」
+  // 随浏览器语言渲染（中文环境无法保证英文），且 min/max 约束会让
+  // 数据跨度外的「Today」按钮失效。单实例自绘：全英文文案、Today 恒
+  // 可用；选日写入触发字段后走与键入相同的校验快照链路（data-value）。
+  // Esc / 点击弹层与字段以外 / 滚动关闭。
+  // ===============================================================
+  const DatePicker = {
+    _el: null,
+    _field: null,
+    _view: null, // 日历当前展示的 { y, m }，m: 0-11
+
+    init() {
+      const el = document.createElement('div');
+      el.className = 'date-pop';
+      el.hidden = true;
+      document.body.appendChild(el);
+      this._el = el;
+      el.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button');
+        if (!btn) return;
+        if (btn.dataset.date) { this._pick(btn.dataset.date); return; }
+        if (btn.classList.contains('dp-prev')) { this._shift(-1); return; }
+        if (btn.classList.contains('dp-next')) { this._shift(1); return; }
+        if (btn.classList.contains('dp-today')) this._pick(this._today());
+      });
+      // 点击弹层与字段以外关闭（mousedown 与字段 click 不冲突：点另一
+      // 个字段时先不关，随后其 click 会重新锚定）
+      document.addEventListener('mousedown', (ev) => {
+        if (el.hidden) return;
+        if (ev.target.closest('.date-pop') || ev.target.closest('.date-text')) return;
+        this.close();
+      });
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && !el.hidden) {
+          ev.stopPropagation();
+          this.close();
+        }
+      });
+      window.addEventListener('scroll', () => this.close(), { passive: true });
+    },
+
+    open(field) {
+      this._field = field;
+      const anchor = field.dataset.value || this._today();
+      const [y, m] = anchor.split('-').map(Number);
+      this._view = { y, m: m - 1 };
+      this._render();
+      this._el.hidden = false;
+      // 视口内定位：字段下方 6px，右缘收进视口，放不下翻到字段上方
+      const r = field.getBoundingClientRect();
+      const pw = this._el.offsetWidth;
+      const ph = this._el.offsetHeight;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+      let top = r.bottom + 6;
+      if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
+      this._el.style.left = `${Math.round(left)}px`;
+      this._el.style.top = `${Math.round(top)}px`;
+    },
+
+    close() {
+      if (!this._el || this._el.hidden) return;
+      this._el.hidden = true;
+      this._field = null;
+    },
+
+    _shift(d) {
+      const v = new Date(this._view.y, this._view.m + d, 1);
+      this._view = { y: v.getFullYear(), m: v.getMonth() };
+      this._render();
+    },
+
+    _today() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    },
+
+    _pick(v) {
+      const f = this._field;
+      this.close();
+      if (f && v) {
+        f.value = v;
+        f.dataset.value = v;
+        f.classList.remove('invalid');
+        refreshAll();
+        f.focus();
+      }
+    },
+
+    _render() {
+      const { y, m } = this._view;
+      const title = new Date(y, m, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const firstDow = new Date(y, m, 1).getDay();
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const sel = this._field ? (this._field.dataset.value || '') : '';
+      const now = this._today();
+      const cells = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+        .map((w) => `<span class="dp-wd">${w}</span>`).join('')
+        + '<span class="dp-empty"></span>'.repeat(firstDow)
+        + Array.from({ length: daysInMonth }, (_, i) => {
+          const d = i + 1;
+          const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const cls = ['dp-day', ds === sel ? 'sel' : '', ds === now ? 'now' : ''].filter(Boolean).join(' ');
+          return `<button type="button" class="${cls}" data-date="${ds}">${d}</button>`;
+        }).join('');
+      this._el.innerHTML = `
+        <div class="dp-head">
+          <button type="button" class="dp-nav dp-prev" aria-label="Previous month"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="dp-title">${esc(title)}</span>
+          <button type="button" class="dp-nav dp-next" aria-label="Next month"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+        </div>
+        <div class="dp-grid">${cells}</div>
+        <div class="dp-foot"><button type="button" class="dp-today">Today</button></div>
+      `;
+    },
+  };
+
   // ---------- helpers ----------
   let _measureCtx = null;
-  // 读取共享日期区间：起点晚于终点时自动交换，保证过滤始终有意义
+  // 读取共享日期区间：起止取字段里「最近一次合法输入」（data-value 快照，
+  // 非法输入不进入过滤）；起点晚于终点时自动交换，保证过滤始终有意义
   function readDateRange() {
     const fromEl = $('#date-from');
     const toEl = $('#date-to');
-    if (fromEl && toEl && fromEl.value && toEl.value && fromEl.value > toEl.value) {
+    const from = (fromEl && fromEl.dataset.value) || '';
+    const to = (toEl && toEl.dataset.value) || '';
+    if (from && to && from > to && fromEl && toEl) {
       [fromEl.value, toEl.value] = [toEl.value, fromEl.value];
+      [fromEl.dataset.value, toEl.dataset.value] = [toEl.dataset.value, fromEl.dataset.value];
     }
     const range = {
-      from: fromEl ? fromEl.value : '',
-      to: toEl ? toEl.value : '',
+      from: (fromEl && fromEl.dataset.value) || '',
+      to: (toEl && toEl.dataset.value) || '',
     };
     const pill = $('#date-range');
     if (pill) pill.classList.toggle('has-filter', !!(range.from || range.to));
     return range;
+  }
+
+  // 读取共享过滤快照（页头同级的两枚 pill）：日期区间 + 项目（Set，
+  // 多选取并集）。各视图每次渲染取一次快照传给 raOpPasses，保证同屏
+  // 各模块口径一致。
+  function readFilters() {
+    return { range: readDateRange(), proj: readProjectFilter() };
+  }
+
+  function readProjectFilter() {
+    return ProjectFilter._selected; // Set<string>，空 = 不过滤
+  }
+
+  // ra_op → 其子链上 CHILD OP 的 project 集合（经 ra_to_child 边，项目字段
+  // 取 child_ops.project，与 CHILD OP 柱状图同源）。选择器按 CHILD OP 项目
+  // 过滤：RA-OP 命中 = 任一 child OP 的 project 在选中集合内（多选并集）。
+  // 无 child OP 或项目为空的 RA-OP 记为缺失：过滤激活时被排除，也不进入
+  // 下拉选项。data 为构建期静态负载，索引惰性构建一次即可。
+  let _raProjIdx = null;
+  function raChildProjectIndex(data) {
+    if (_raProjIdx) return _raProjIdx;
+    const projByOp = new Map((data.child_ops || []).map((c) => [c.id, c.project]));
+    const map = {};
+    for (const e of (data.edges && data.edges.ra_to_child) || []) {
+      const proj = projByOp.get(e.child_op_id);
+      if (proj == null || proj === '') continue;
+      (map[e.ra_op_id] || (map[e.ra_op_id] = new Set())).add(String(proj));
+    }
+    _raProjIdx = map;
+    return map;
+  }
+
+  // RA-OP 是否落在共享过滤内：子链项目命中任一选中项（多选并集）+
+  // 创建日期落在区间（区间激活时排除无日期项，与既有日期过滤语义一致）
+  function raOpPasses(raId, agg, data, f) {
+    if (f.proj && f.proj.size) {
+      const raProj = raChildProjectIndex(data)[raId];
+      if (!raProj || ![...raProj].some((p) => f.proj.has(p))) return false;
+    }
+    const { from, to } = f.range;
+    if (from || to) {
+      const d = ((agg && agg.ra_op_time) || {})[raId];
+      if (!d || (from && d < from) || (to && d > to)) return false;
+    }
+    return true;
+  }
+
+  // 命中高亮：按命中位置切分、逐段 esc 后对命中段包 <mark>，全程转义
+  function markHits(text, q) {
+    const s = String(text);
+    const nq = q.toLowerCase();
+    if (!nq) return esc(s);
+    const lower = s.toLowerCase();
+    let out = '';
+    let i = 0;
+    while (i < s.length) {
+      const hit = lower.indexOf(nq, i);
+      if (hit < 0) { out += esc(s.slice(i)); break; }
+      if (hit > i) out += esc(s.slice(i, hit));
+      out += `<mark>${esc(s.slice(hit, hit + nq.length))}</mark>`;
+      i = hit + nq.length;
+    }
+    return out;
   }
 
   function textWidth(s, fontSize) {
@@ -2289,19 +2821,21 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function hexAlpha(hex, alpha) {
-    // '#2563eb' + 0.12 → 'rgba(37,99,235,0.12)'
+  // 徽章文字用同系加深变体（×0.72），保证亮色系（mint/amber/coral…）
+  // 在 11–12px 小字号下仍可读；圆点仍用规范亮色。
+  function badgeText(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-    if (!m) return `rgba(100,116,139,${alpha})`;
+    if (!m) return hex;
     const n = parseInt(m[1], 16);
-    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    return `rgba(${r},${g},${b},${alpha})`;
+    const f = (c) => Math.round(c * 0.72);
+    const r = f((n >> 16) & 255), g = f((n >> 8) & 255), b = f(n & 255);
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
   }
 
   function stateBadgeHtml(sc, state) {
     const s = state || '(empty)';
-    const color = sc[s] || '#64748b';
-    return `<span class="status-badge" style="background:${hexAlpha(color, 0.12)};color:${color}">${esc(String(s).replace(/^ALM_/, ''))}</span>`;
+    const color = sc[s] || '#9ca3af';
+    return `<span class="status-badge" style="--badge-dot:${color};--badge-text:${badgeText(color)}">${esc(String(s).replace(/^ALM_/, ''))}</span>`;
   }
 
   // ===============================================================
@@ -2322,9 +2856,47 @@
   function clearDateFilter() {
     ['date-from', 'date-to'].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.value = '';
+      if (el) {
+        el.value = '';
+        delete el.dataset.value;
+        el.classList.remove('invalid');
+      }
     });
     refreshAll();
+  }
+
+  // 日期字段：type=text 自绘 + 隐藏原生 picker（缘由见 template 注释）。
+  // 合法值落入 data-value 供 readDateRange 作过滤快照；非法输入仅标红、
+  // 不改快照；点击字段经 showPicker() 唤起隐藏原生日历（需用户手势，
+  // 老浏览器无此 API 时退化为仅键入）。
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function isValidDateStr(s) {
+    if (!DATE_RE.test(s)) return false;
+    const d = new Date(`${s}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }
+
+  function initDateFields() {
+    const from = $('#date-from');
+    const to = $('#date-to');
+    if (!from || !to) return;
+    for (const el of [from, to]) {
+      el.addEventListener('input', () => {
+        const v = el.value.trim();
+        if (!v) {
+          delete el.dataset.value;
+          el.classList.remove('invalid');
+          refreshAll();
+        } else if (isValidDateStr(v)) {
+          el.dataset.value = v;
+          el.classList.remove('invalid');
+          refreshAll();
+        } else {
+          el.classList.add('invalid'); // 快照不动：过滤保持最近合法值
+        }
+      });
+      el.addEventListener('click', () => DatePicker.open(el));
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -2349,13 +2921,12 @@
     try { DetailsDrawer.init(); } catch (e) { console.error('DetailsDrawer:', e); }
     try { ProjectTree.init(agg, data); } catch (e) { console.error('ProjectTree:', e); }
     try { TopSearch.init(agg, data); } catch (e) { console.error('TopSearch:', e); }
+    try { ProjectFilter.init(); } catch (e) { console.error('ProjectFilter init:', e); }
+    try { DatePicker.init(); } catch (e) { console.error('DatePicker init:', e); }
     Pages.init();
     Sidebar.init();
 
-    ['date-from', 'date-to'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('change', refreshAll);
-    });
+    initDateFields();
     const clearBtn = document.getElementById('date-clear');
     if (clearBtn) clearBtn.addEventListener('click', clearDateFilter);
   });
@@ -2370,13 +2941,92 @@
   window.Pages = Pages;
   window.Sidebar = Sidebar;
   window.TopSearch = TopSearch;
+  window.ProjectFilter = ProjectFilter;
+  window.DatePicker = DatePicker;
 
-  // ----- DEBUG: integrity link inspector (only when ?debug=integrity) -----
-  // 链接是 HTTPS Web Integrity URL（不再是 integrity:// 自定义协议），
-  // 浏览器原生 <a href> 点击会直接在新标签页打开，无需任何 JS 派发。
-  // 保留 ?debug=integrity 调试开关：拦截点击、把链接原文打到右上角蓝框，
-  // 方便在客户端机器上核对实际 URL 是否被 Mimecast / 浏览器改写。
-  if (/[?&]debug=integrity\b/.test(location.search)) {
+  // ----- PTC Integrity opener integration -----
+  // dashboard.html 的 ID 链接是 HTTPS Web Integrity 地址（点开就是 Web 版）。
+  // 但企业部署的 Mimecast 浏览器扩展会改写浏览器内的 URL 派发，挡住 PTC 桌面
+  // 客户端的唤起。为了真正唤起桌面客户端，需要把 URL 交给浏览器外的一个本地
+  // 服务，由它通过 OS-level ShellExecute 派发——这一步不在浏览器进程里，
+  // Mimecast 监控不到。
+  //
+  // 流程：
+  //   1. 点 ID → fetch('http://127.0.0.1:8766/open?url=<URL>')
+  //   2. 本地 opener 服务收到请求，cmd /c start "" "<URL>" 走 ShellExecute
+  //   3. OS 按注册表把 URL 派发给 PTC 客户端
+  //
+  // opener 不在线（用户还没启动 GenerateDashboard.exe / IntegrityOpener.exe）
+  // → 弹英文 modal 提示用户去启动监听程序，同时允许浏览器原生 target=_blank
+  // 兜底（Web 版页面至少能打开看 item 信息）。
+  const OPENER_ENDPOINT = 'http://127.0.0.1:8766/open';
+  const OPENER_TIMEOUT_MS = 1500;
+
+  const showOpenerOfflineModal = (idText) => {
+    document.getElementById('opener-offline-overlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'opener-offline-overlay';
+    overlay.className = 'opener-overlay';
+
+    const close = () => overlay.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'opener-modal';
+
+    modal.innerHTML = `
+      <div class="opener-modal-title">
+        PTC Integrity Opener is not running
+      </div>
+      <div class="opener-modal-body">
+        To open item <strong>${esc(idText)}</strong>
+        directly in the PTC RV&S client, the local opener service must be running.
+        <br><br>
+        Please launch one of the following, then click the ID again:
+        <ul>
+          <li><code>GenerateDashboard.exe</code>
+              &mdash; renders the dashboard and starts the opener.</li>
+          <li><code>IntegrityOpener.exe</code>
+              &mdash; starts the opener only.</li>
+        </ul>
+        <br>
+        The opener listens on
+        <code>127.0.0.1:8766</code>.
+        Once it is running, this dialog will not appear.
+      </div>
+      <div class="opener-modal-foot">
+        <button type="button" id="opener-offline-close" class="opener-modal-close">
+          Close
+        </button>
+      </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+    document.getElementById('opener-offline-close').addEventListener('click', close);
+  };
+
+  const dispatchViaOpener = (href) => {
+    // 带超时的 fetch，opener 不在线时不阻塞点击响应。
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), OPENER_TIMEOUT_MS);
+    const url = `${OPENER_ENDPOINT}?url=${encodeURIComponent(href)}`;
+    return fetch(url, { signal: ctrl.signal, mode: 'cors' })
+      .then((r) => {
+        clearTimeout(tid);
+        if (!r.ok) throw new Error(`opener returned ${r.status}`);
+        return true;
+      })
+      .catch(() => {
+        clearTimeout(tid);
+        return false;
+      });
+  };
+
+  const integrityDebug = /[?&]debug=integrity\b/.test(location.search);
+
+  if (integrityDebug) {
     const ensureBanner = () => {
       let b = document.getElementById('dbg-integrity-banner');
       if (b) return b;
@@ -2384,10 +3034,10 @@
       b.id = 'dbg-integrity-banner';
       b.style.cssText = [
         'position:fixed', 'top:8px', 'right:8px', 'z-index:99999',
-        'background:#fff', 'color:#0f172a',
-        'border:2px solid #2563eb', 'border-radius:8px',
+        'background:var(--surface)', 'color:var(--text-2)',
+        'border:2px solid var(--accent)', 'border-radius:var(--r-inner)',
         'padding:12px 16px', 'font:12px/1.4 ui-monospace,Menlo,monospace',
-        'max-width:760px', 'box-shadow:0 6px 18px rgba(0,0,0,.15)',
+        'max-width:760px', 'box-shadow:0 6px 18px rgba(2,5,32,.15)',
         'white-space:pre-wrap', 'word-break:break-all',
       ].join(';');
       b.textContent = 'DEBUG: click an ID in the Details table to see the URL the browser would navigate to.';
@@ -2413,5 +3063,26 @@
         'If href attr looks correct, the issue is in how the OS / Integrity\n' +
         'client receives the URL when dispatched — not in the page itself.';
     }, true);
+    return;
   }
+
+  // 正常模式：拦截点击 → 试 opener → 失败弹英文 modal + 浏览器原生 target=_blank
+  // 兜底打开 Web 版 Integrity。
+  document.addEventListener('click', (ev) => {
+    const link = ev.target.closest && ev.target.closest('a.tx-id-link');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    const idText = link.textContent || '';
+
+    // 拦截 <a> 默认的 target=_blank，避免 opener 失败后立刻又开一个 Web 版标签页
+    // （让用户先看到 modal 说明，再手动重试）。
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    dispatchViaOpener(href).then((ok) => {
+      if (!ok) {
+        showOpenerOfflineModal(idText);
+      }
+    });
+  }, true);
 })();

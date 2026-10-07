@@ -1,0 +1,52 @@
+<!-- transactions-table.html -->
+<div class="tx-card" id="tx">
+  <div class="tx-head">
+    <span class="tx-title">Transactions</span>
+    <label class="tx-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="Search…"></label>
+  </div>
+  <div class="tx-scroll">
+    <table class="tx-tbl">
+      <thead><tr><th data-sort="txn" aria-sort="ascending">Transaction</th><th data-sort="cust">Customer</th><th data-sort="method">Method</th><th data-sort="date">Date</th><th data-sort="status">Status</th><th data-sort="amt" data-type="num" class="r">Amount</th></tr></thead>
+      <tbody class="tx-tbody">
+        <tr><td class="col-txn tx-txn" data-val="TXN-9001">TXN-9001</td><td class="col-cust" data-val="Ava Chen"><div class="tx-cust"><span class="tx-avatar" style="background:#6d8cff">AC</span><div><div class="tx-name">Ava Chen</div><div class="tx-email">ava@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Visa 4242">Visa •• 4242</td><td class="col-date tx-when" data-val="2024-06-18">Jun 18, 2024</td><td class="col-status" data-val="Paid"><span class="tx-badge paid">Paid</span></td><td class="col-amt tx-amt" data-val="240">$240.00</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9002">TXN-9002</td><td class="col-cust" data-val="Marcus Reed"><div class="tx-cust"><span class="tx-avatar" style="background:#46d6a0">MR</span><div><div class="tx-name">Marcus Reed</div><div class="tx-email">marcus@acme.io</div></div></div></td><td class="col-method tx-method" data-val="PayPal">PayPal</td><td class="col-date tx-when" data-val="2024-06-17">Jun 17, 2024</td><td class="col-status" data-val="Pending"><span class="tx-badge pending">Pending</span></td><td class="col-amt tx-amt" data-val="89.5">$89.50</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9003">TXN-9003</td><td class="col-cust" data-val="Lena Petrova"><div class="tx-cust"><span class="tx-avatar" style="background:#c77dff">LP</span><div><div class="tx-name">Lena Petrova</div><div class="tx-email">lena@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Mastercard 1881">Mastercard •• 1881</td><td class="col-date tx-when" data-val="2024-06-16">Jun 16, 2024</td><td class="col-status" data-val="Paid"><span class="tx-badge paid">Paid</span></td><td class="col-amt tx-amt" data-val="540">$540.00</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9004">TXN-9004</td><td class="col-cust" data-val="Diego Santos"><div class="tx-cust"><span class="tx-avatar" style="background:#ffc24a">DS</span><div><div class="tx-name">Diego Santos</div><div class="tx-email">diego@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Visa 7711">Visa •• 7711</td><td class="col-date tx-when" data-val="2024-06-15">Jun 15, 2024</td><td class="col-status" data-val="Refunded"><span class="tx-badge refunded">Refunded</span></td><td class="col-amt tx-amt" data-val="120">$120.00</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9005">TXN-9005</td><td class="col-cust" data-val="Priya Nair"><div class="tx-cust"><span class="tx-avatar" style="background:#ff8f6d">PN</span><div><div class="tx-name">Priya Nair</div><div class="tx-email">priya@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Amex 1004">Amex •• 1004</td><td class="col-date tx-when" data-val="2024-06-14">Jun 14, 2024</td><td class="col-status" data-val="Failed"><span class="tx-badge failed">Failed</span></td><td class="col-amt tx-amt" data-val="75.25">$75.25</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9006">TXN-9006</td><td class="col-cust" data-val="Tom Becker"><div class="tx-cust"><span class="tx-avatar" style="background:#4ad6e0">TB</span><div><div class="tx-name">Tom Becker</div><div class="tx-email">tom@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Visa 4242">Visa •• 4242</td><td class="col-date tx-when" data-val="2024-06-13">Jun 13, 2024</td><td class="col-status" data-val="Paid"><span class="tx-badge paid">Paid</span></td><td class="col-amt tx-amt" data-val="1300">$1,300.00</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9007">TXN-9007</td><td class="col-cust" data-val="Sofia Rossi"><div class="tx-cust"><span class="tx-avatar" style="background:#ff8f6d">SR</span><div><div class="tx-name">Sofia Rossi</div><div class="tx-email">sofia@acme.io</div></div></div></td><td class="col-method tx-method" data-val="PayPal">PayPal</td><td class="col-date tx-when" data-val="2024-06-12">Jun 12, 2024</td><td class="col-status" data-val="Paid"><span class="tx-badge paid">Paid</span></td><td class="col-amt tx-amt" data-val="64">$64.00</td></tr>
+        <tr><td class="col-txn tx-txn" data-val="TXN-9008">TXN-9008</td><td class="col-cust" data-val="Omar Farouk"><div class="tx-cust"><span class="tx-avatar" style="background:#4ad6e0">OF</span><div><div class="tx-name">Omar Farouk</div><div class="tx-email">omar@acme.io</div></div></div></td><td class="col-method tx-method" data-val="Mastercard 2231">Mastercard •• 2231</td><td class="col-date tx-when" data-val="2024-06-11">Jun 11, 2024</td><td class="col-status" data-val="Pending"><span class="tx-badge pending">Pending</span></td><td class="col-amt tx-amt" data-val="410">$410.00</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tx-foot"><span class="lbl" data-foot>8 transactions</span><span class="tot" data-total>$2,838.75 total</span></div>
+</div>
+<style>
+  html,body{ margin:0; min-height:100%; display:grid; place-items:center; background:radial-gradient(120% 90% at 50% -10%,#16171f,#0a0b10 60%); font-family:system-ui,sans-serif; }
+  .tx-card{ --fg:#f3f4f8; --muted:#9094a0; --line:rgba(255,255,255,.09); --accent:#6d8cff; --field:rgba(255,255,255,.05);
+    width:min(94%,880px); margin:30px; color:var(--fg); font-size:14px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(255,255,255,.018); box-sizing:border-box; }
+  .tx-card *{ box-sizing:border-box; }
+  .tx-head{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:15px 18px; border-bottom:1px solid var(--line); } .tx-title{ font-size:15px; font-weight:600; }
+  .tx-search{ margin-left:auto; display:flex; align-items:center; gap:8px; padding:7px 11px; border:1px solid var(--line); border-radius:9px; background:var(--field); min-width:160px; } .tx-search svg{ width:15px; height:15px; color:var(--muted); } .tx-search input{ flex:1; min-width:0; background:none; border:0; color:var(--fg); font:inherit; outline:none; }
+  .tx-scroll{ overflow-x:auto; } .tx-tbl{ width:100%; border-collapse:collapse; min-width:680px; }
+  .tx-tbl th{ text-align:left; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:11px 16px; border-bottom:1px solid var(--line); cursor:pointer; user-select:none; white-space:nowrap; } .tx-tbl th.r{ text-align:right; } .tx-tbl th:hover{ color:var(--fg); }
+  th[aria-sort]::after{ content:" ↑"; color:var(--accent); } th[aria-sort="descending"]::after{ content:" ↓"; }
+  .tx-tbl td{ padding:12px 16px; border-bottom:1px solid var(--line); white-space:nowrap; } .tx-tbl tbody tr:last-child td{ border-bottom:0; } .tx-tbl tbody tr:hover{ background:rgba(255,255,255,.025); }
+  .tx-txn{ color:var(--muted); font-variant-numeric:tabular-nums; } .tx-cust{ display:flex; align-items:center; gap:11px; } .tx-avatar{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:600; color:#0a0b10; flex:none; }
+  .tx-name{ font-weight:600; } .tx-email{ color:var(--muted); font-size:12.5px; } .tx-method{ font-variant-numeric:tabular-nums; } .tx-when{ color:var(--muted); } .tx-amt{ text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+  .tx-badge{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 10px; border-radius:99px; } .tx-badge::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .tx-badge.paid{ color:#46d6a0; background:rgba(70,214,160,.12); } .tx-badge.pending{ color:#ffc24a; background:rgba(255,194,74,.12); } .tx-badge.failed{ color:#ff7a8a; background:rgba(255,122,138,.12); } .tx-badge.refunded{ color:#6d9cff; background:rgba(109,156,255,.12); }
+  .tx-foot{ display:flex; align-items:center; padding:13px 18px; border-top:1px solid var(--line); font-size:13px; } .tx-foot .lbl{ color:var(--muted); } .tx-foot .tot{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
+</style>
+<script>
+  (function(){
+    var card=document.getElementById('tx'), tbody=card.querySelector('.tx-tbody');
+    var foot=card.querySelector('[data-foot]'), total=card.querySelector('[data-total]'), search=card.querySelector('.tx-search input');
+    function rows(){ return [].slice.call(tbody.querySelectorAll('tr')); }
+    function money(n){ return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function refresh(){ var vis=rows().filter(function(r){return r.style.display!=='none';}); var sum=0; vis.forEach(function(r){ sum+=parseFloat(r.querySelector('.col-amt').dataset.val)||0; }); if(foot)foot.textContent=vis.length+(vis.length===1?' transaction':' transactions'); if(total)total.textContent=money(sum)+' total'; }
+    card.querySelectorAll('th[data-sort]').forEach(function(th){ th.addEventListener('click', function(){ var key=th.dataset.sort, num=th.dataset.type==='num', dir=th.getAttribute('aria-sort')==='ascending'?'descending':'ascending'; card.querySelectorAll('th[data-sort]').forEach(function(o){ o.removeAttribute('aria-sort'); }); th.setAttribute('aria-sort',dir); rows().sort(function(a,b){ var av=a.querySelector('.col-'+key).dataset.val, bv=b.querySelector('.col-'+key).dataset.val; var c=num?(parseFloat(av)-parseFloat(bv)):(av.toLowerCase()<bv.toLowerCase()?-1:av.toLowerCase()>bv.toLowerCase()?1:0); return dir==='ascending'?c:-c; }).forEach(function(r){ tbody.appendChild(r); }); }); });
+    search.addEventListener('input', function(){ var q=search.value.trim().toLowerCase(); rows().forEach(function(r){ r.style.display=r.textContent.toLowerCase().indexOf(q)>-1?'':'none'; }); refresh(); });
+    refresh();
+  })();
+</script>

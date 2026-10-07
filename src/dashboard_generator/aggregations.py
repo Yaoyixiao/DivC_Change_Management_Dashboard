@@ -7,50 +7,58 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-# 状态颜色映射（与 manifest 实际状态一致；浅色主题下用饱和度更高的色调）
+# 状态颜色映射 — Relate 视觉语言 + Open/Closed 语义分组：
+#   Open 类（还在路上、需要关注）= 琥珀→紫→蓝的活跃冷调色阶，按生命周期推进；
+#   Closed 类（已有定论、无风险）= 绿/青/珊瑚/灰的沉稳终态色。
+# 注意：这里只管"视觉语义"；业务统计口径见下方 OPEN_STATES / CLOSED_STATES
+# （Approved 归 Open，两处口径一致）。
 STATE_COLORS: dict[str, str] = {
-    "ALM_Closed":     "#16a34a",  # 绿
-    "ALM_Realized":   "#0891b2",  # 青
-    "ALM_Initiated":  "#d97706",  # 琥珀
-    "ALM_Defined":    "#64748b",  # 灰
-    "ALM_Analysed":   "#8b5cf6",  # 紫
-    "ALM_Started":    "#2563eb",  # 蓝
-    "ALM_Checked":    "#65a30d",  # 橄榄
-    "ALM_Rejected":   "#dc2626",  # 红
-    "ALM_Cancelled":  "#991b1b",  # 暗红
-    "ALM_Approved":   "#0d9488",  # 翠绿
-    "ALM_Planned":    "#a16207",  # 棕
+    # --- Open 类（需关注）---
+    "ALM_Initiated":  "#ffa64d",  # 琥珀 Amber Pending — 刚发起，最需关注
+    "ALM_Analysed":   "#7c6cf6",  # 紫罗兰 — 分析中
+    "ALM_Defined":    "#6366f1",  # 靛蓝 — 已定义
+    "ALM_Checked":    "#0ea5e9",  # 天蓝 — 校验中
+    "ALM_Approved":   "#0099ff",  # Azure — 已批准，放行
+    "ALM_Planned":    "#3b82f6",  # Cobalt Glow — 已计划
+    "ALM_Started":    "#145aff",  # Royal Signal — 执行中，品牌最强色压轴
+    # --- Closed 类（无风险）---
+    "ALM_Closed":     "#16a34a",  # 祖母绿 — 成功关闭（Mint #16ca2e 调深一档，大面积填充不刺眼）
+    "ALM_Realized":   "#0d9488",  # 冷青 — 价值已实现
+    "ALM_Rejected":   "#f26052",  # Coral Lost — 已否决
+    "ALM_Cancelled":  "#9ca3af",  # 灰 — 已取消，视觉退后
 }
 
-# 节点类型颜色（KPI / 树 / 柱状图共用）
+# 节点类型颜色（KPI / 树 / 柱状图共用）— Relate 冷调家族
 NODE_COLORS: dict[str, str] = {
-    "ra_op":            "#7c3aed",  # 紫
-    "parent_op":        "#2563eb",  # 蓝
-    "child_op":         "#06b6d4",  # 青
-    "delivery":         "#f97316",  # 橙
-    "change_request":   "#22c55e",  # 绿
-    "build":            "#ec4899",  # 粉
+    "ra_op":            "#7c6cf6",  # 紫罗兰
+    "parent_op":        "#145aff",  # Royal Signal
+    "child_op":         "#0ea5e9",  # 天蓝
+    "delivery":         "#ffa64d",  # Amber Pending
+    "change_request":   "#16a34a",  # 祖母绿
+    "build":            "#f26052",  # Coral Lost
 }
 
-# 成熟度颜色
+# 成熟度颜色 — Relate 语义色（CAT 2 最优 → CAT 5 最差）
 MATURITY_COLORS: dict[str, str] = {
-    "CAT 2": "#22c55e",
+    "CAT 2": "#16a34a",
     "CAT 3": "#84cc16",
-    "CAT 4": "#f59e0b",
-    "CAT 5": "#ef4444",
-    "Not Applicable": "#94a3b8",
-    "": "#cbd5e1",
+    "CAT 4": "#ffa64d",
+    "CAT 5": "#f26052",
+    "Not Applicable": "#9ca3af",
+    "": "#e2e8f0",
 }
 
-# 视为"已闭环"的状态集合（业务定义：已 dispositioned，无论 pass/fail）
-# Open  = Initiated/Defined/Analysed/Checked/Started/Planned
-# Closed = Closed/Realized/Approved/Rejected/Cancelled
+# 视为"已闭环"的状态集合
+# 业务定义：Approved = 已批准但仍在执行跟进，归 Open（需关注）；
+#           终态只有 Closed/Realized（正向）与 Rejected/Cancelled（负向/终止）。
+# Open  = Initiated/Defined/Analysed/Checked/Approved/Planned/Started
+# Closed = Closed/Realized/Rejected/Cancelled
 OPEN_STATES: frozenset[str] = frozenset({
     "ALM_Initiated", "ALM_Defined", "ALM_Analysed", "ALM_Checked",
-    "ALM_Started",   "ALM_Planned",
+    "ALM_Approved",  "ALM_Started", "ALM_Planned",
 })
 CLOSED_STATES: frozenset[str] = frozenset({
-    "ALM_Closed",   "ALM_Realized", "ALM_Approved",
+    "ALM_Closed",   "ALM_Realized",
     "ALM_Rejected", "ALM_Cancelled",
 })
 

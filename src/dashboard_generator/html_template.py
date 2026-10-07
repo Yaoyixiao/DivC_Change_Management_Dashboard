@@ -79,7 +79,9 @@ def render_html(payload: dict[str, Any]) -> str:
     返回完整的 HTML 字符串。
     """
     template = _read(ASSETS_DIR / "template.html")
-    css = _read(ASSETS_DIR / "styles.css")
+    # fonts.css（内嵌 Inter base64）前置；文件缺失时降级为纯系统字体栈
+    fonts_css_path = ASSETS_DIR / "fonts.css"
+    css = (_read(fonts_css_path) + "\n" if fonts_css_path.exists() else "") + _read(ASSETS_DIR / "styles.css")
     js = _read(ASSETS_DIR / "app.js")
 
     template = _render_placeholders(template, payload.get("meta") or {})
@@ -91,7 +93,7 @@ def render_html(payload: dict[str, Any]) -> str:
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1200, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Read-Across Dashboard</title>
 <style>
 {css}

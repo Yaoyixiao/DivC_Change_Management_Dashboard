@@ -1,5 +1,9 @@
 # Known Issues
 
+> **⚠️ 过时声明（2026-10-07）**：本文按旧 RA-OP 看板记录已知问题与口径差异（其中的"当前"
+> 数字均指旧库）。`ALM_Completed` 状态、overdue 垃圾值、`Date Ref` 序列号等新库数据质量坑
+> 及处理口径见 [dashboard-content.md](dashboard-content.md) §1.3/§7。本文其余条目适配时复核。
+
 按修复优先级排序。
 
 ---

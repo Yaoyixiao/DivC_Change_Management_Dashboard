@@ -1,5 +1,10 @@
 # Architecture
 
+> **⚠️ 过时声明（2026-10-07）**：本文档描述旧 RA-OP 看板（ReadAcross 时代）的架构、模块依赖与
+> schema，与当前 ECR 层级库（items/edges）不兼容。模块划分与设计决策思路仍可参考；当前权威见
+> [data-pipeline.md](data-pipeline.md)（取数）与 [dashboard-content.md](dashboard-content.md)
+> （新 dashboard 内容）。
+
 ## 数据流
 
 ```

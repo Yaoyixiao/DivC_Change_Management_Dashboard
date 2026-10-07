@@ -1,5 +1,10 @@
 # Data Contract
 
+> **⚠️ 过时声明（2026-10-07）**：本文的顶层信封形状 `{meta, data, aggregations}` 仍沿用
+> （dashboard-content.md §9），但其中全部实体表（ra_ops/parent_ops/…）、边与 aggregation 字段
+> 均为旧 RA-OP 口径，与当前 ECR 层级库（items/edges）不符。新契约以
+> [dashboard-content.md](dashboard-content.md) §3/§9 为准，适配时更新本文。
+
 `window.__PAYLOAD__` 的完整结构，由 Python 端 `load_payload` + `compute_all_aggregations` 拼装，浏览器侧 `app.js` 消费。
 
 ## 顶层结构

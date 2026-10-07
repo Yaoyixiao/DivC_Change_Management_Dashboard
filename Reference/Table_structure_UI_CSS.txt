@@ -1,0 +1,103 @@
+.tree-container {
+  width: 320px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  padding: 24px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ul ul {
+  margin-left: 11px;
+  padding-left: 11px;
+  border-left: 1px solid #e4e4e7;
+}
+
+.tree-item {
+  position: relative;
+  margin-top: 4px;
+}
+
+ul ul .tree-item::before {
+  content: "";
+  position: absolute;
+  left: -11px;
+  top: 14px;
+  width: 11px;
+  height: 1px;
+  background-color: #e4e4e7;
+}
+
+.tree-label,
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #09090b;
+  transition: background-color 0.2s;
+  user-select: none;
+  text-decoration: none;
+  height: 28px;
+}
+
+.tree-label:hover,
+.file-item:hover {
+  background-color: #f4f4f5;
+}
+
+.is-selected {
+  background-color: #f4f4f5;
+  color: #09090b;
+  font-weight: 500;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  color: #71717a;
+  flex-shrink: 0;
+}
+
+.folder-open-icon {
+  display: none;
+}
+.folder-closed-icon {
+  display: block;
+}
+
+.tree-toggle:checked ~ .tree-label .folder-open-icon {
+  display: block;
+  color: #09090b;
+}
+.tree-toggle:checked ~ .tree-label .folder-closed-icon {
+  display: none;
+}
+
+.tree-toggle {
+  display: none;
+}
+
+.tree-children-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease-in-out;
+}
+
+.tree-children {
+  overflow: hidden;
+}
+
+/* State: Open */
+.tree-toggle:checked ~ .tree-children-wrapper {
+  grid-template-rows: 1fr;
+}

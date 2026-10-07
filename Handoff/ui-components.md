@@ -1,5 +1,10 @@
 # UI Components
 
+> **⚠️ 过时声明（2026-10-07）**：本文描述旧 RA-OP 看板的三个视图（Overview / Details / Projects）
+> 与抽屉交互；新 dashboard 的内容与交互以 [dashboard-content.md](dashboard-content.md) 为唯一
+> 权威、视觉以 [design/homepage.html](../design/homepage.html) 为准。本文的模块划分、键盘集、
+> 空态等交互纪律仍可参考（`src/dashboard_generator/assets/` 现仍与之对应）。
+
 页面是单文件 dashboard，**三个视图**（Overview / Details / Projects，由 `Pages` 模块切换）+ 详情抽屉 + 2 个外围（sidebar + topbar）。所有数字从 `aggregations.*` / `data.*` 取，0 硬编码。
 
 ## 视图切换（Pages 模块）

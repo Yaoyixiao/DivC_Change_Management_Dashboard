@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icon Rail</title>
+  <style>
+    *{ box-sizing:border-box; } html,body{ margin:0; min-height:100vh; }
+    body{ background:#0f1014; font-family:system-ui,-apple-system,sans-serif; }
+    .ril{ --ink:#f2f2f6; --muted:#9a9ba6; --glassbd:rgba(255,255,255,.10); --active:rgba(255,255,255,.10); --accent:#7c8cff; --page:#0f1014; --pageln:rgba(255,255,255,.06); --spring:cubic-bezier(.34,1.06,.5,1);
+      position:relative; height:100vh; overflow:hidden; isolation:isolate; background:var(--page); color:var(--ink); }
+    .ril-page{ position:absolute; inset:0; padding:28px 28px 28px 92px; display:flex; flex-direction:column; gap:14px; }
+    .ril-pbar{ display:flex; align-items:center; gap:12px; height:30px; color:var(--muted); font-size:13px; font-weight:500; }
+    .ril-pbar .dots{ display:flex; gap:6px; margin-left:auto; } .ril-pbar .dots i{ width:10px; height:10px; border-radius:50%; background:var(--pageln); }
+    .ril-prow{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .ril-card{ height:120px; border-radius:14px; border:1px solid var(--pageln); background:rgba(255,255,255,.025); }
+    .ril-card.wide{ grid-column:1 / -1; height:74px; }
+    .ril-bar{ position:absolute; left:0; top:0; bottom:0; z-index:10; width:68px; display:flex; flex-direction:column; gap:4px; padding:14px 12px; overflow:hidden; white-space:nowrap;
+      background:rgba(20,21,27,.94); border-right:1px solid var(--glassbd); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+      transition:width .42s var(--spring), box-shadow .42s var(--spring); }
+    .ril-bar:hover, .ril-bar:focus-within{ width:226px; box-shadow:34px 0 64px -30px rgba(0,0,0,.7); }
+    .ril-top{ display:flex; align-items:center; gap:12px; height:38px; padding:0 4px; margin-bottom:6px; }
+    .ril-logo{ flex:0 0 auto; width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--accent),#33d6ff); display:grid; place-items:center; color:#06121f; font-weight:900; font-size:13px; }
+    .ril-name{ font-weight:700; font-size:14px; letter-spacing:-.01em; opacity:0; transition:opacity .3s ease; }
+    .ril-item{ display:flex; align-items:center; gap:14px; height:44px; padding:0 10px; border-radius:11px; color:var(--muted); text-decoration:none; cursor:pointer; transition:background .2s var(--spring), color .2s ease; }
+    .ril-item:hover{ background:var(--active); color:var(--ink); }
+    .ril-item.active{ background:var(--active); color:var(--ink); } .ril-item.active .ic{ color:var(--accent); }
+    .ril-item .ic{ flex:0 0 24px; display:grid; place-items:center; color:inherit; } .ril-item .ic svg{ width:19px; height:19px; }
+    .ril-av{ width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,#33d6ff,var(--accent)); color:#06121f; font-size:10px; font-weight:800; }
+    .ril-item .lb{ font-size:14px; opacity:0; transition:opacity .3s ease; }
+    .ril-bar:hover .lb, .ril-bar:focus-within .lb, .ril-bar:hover .ril-name, .ril-bar:focus-within .ril-name{ opacity:1; transition-delay:.08s; }
+    .ril-sep{ height:1px; margin:8px 6px; background:var(--glassbd); }
+    .ril-foot{ margin-top:auto; }
+    @media (prefers-reduced-motion:reduce){ .ril-bar{ transition:width .2s ease; } .ril-item .lb,.ril-name{ transition:none; } }
+  </style>
+</head>
+<body>
+  <div class="ril">
+    <div class="ril-page" aria-hidden="true">
+      <div class="ril-pbar"><span>Dashboard</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="ril-prow"><div class="ril-card wide"></div></div>
+      <div class="ril-prow"><div class="ril-card"></div><div class="ril-card"></div><div class="ril-card"></div></div>
+      <div class="ril-prow"><div class="ril-card"></div><div class="ril-card"></div><div class="ril-card"></div></div>
+    </div>
+    <nav class="ril-bar" aria-label="Main navigation">
+      <div class="ril-top"><span class="ril-logo">◆</span><span class="ril-name">Northwind</span></div>
+      <a class="ril-item active" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg></span><span class="lb">Home</span></a>
+      <a class="ril-item" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><span class="lb">Explore</span></a>
+      <a class="ril-item" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="lb">Projects</span></a>
+      <a class="ril-item" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.4 7.2L3 21l1.8-6.6A8 8 0 1 1 21 12z"/></svg></span><span class="lb">Messages</span></a>
+      <a class="ril-item" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l4 4 6-10 4 6h4"/></svg></span><span class="lb">Insights</span></a>
+      <div class="ril-sep"></div>
+      <a class="ril-item" href="#"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg></span><span class="lb">Settings</span></a>
+      <a class="ril-item ril-foot" href="#"><span class="ic ril-av">AL</span><span class="lb">Ada Lovelace</span></a>
+    </nav>
+  </div>
+</body>
+</html>
