@@ -76,9 +76,13 @@ edges 164 = work_items 132（含 3 处共享 WI 引用）+ actions 24 + work_ite
 
 ## 7. 接下来的工作
 
-1. **渲染链路适配新库**（唯一主线）：按 dashboard-content.md §9 重写 data_loader /
-   aggregations，从 design/homepage.html 移植 Home（五卡 + 表格）与交互，Graph 视图随后。
-2. 适配同步项：重写 workflow.md 的浏览器手测清单；更新 `packaging/build.py --smoke` 的
+1. **已完成（`graph-view` 分支，cc0f873）**：Graph 视图原型——在 design/homepage.html 上点亮
+   导航的 Graph 占位（视觉参照旧 ProjectTree + Relate token），mockup_build.py 扩展注入图数据
+   （flat nodes + 三类 edges，补 Build 与共享多父信息）；grill 定稿见 dashboard-content.md
+   §6 与 §10 #34–38，手测清单见 workflow.md §4.1。
+2. **渲染链路适配新库**（原型定稿后另立分支）：按 dashboard-content.md §9 重写 data_loader /
+   aggregations，从 design/homepage.html 移植 Home（五卡 + 表格）与 Graph。
+3. 适配同步项：重写 workflow.md 的浏览器手测清单；更新 `packaging/build.py --smoke` 的
    payload 断言（现为旧 RA-OP 计数，对新库必失败）。
-3. 收尾项（dashboard-content.md §8 明确本轮不做，勿顺手加）：卡片点击筛选、深色模式、
-   i18n、分页。
+4. 收尾项（dashboard-content.md §8 明确本轮不做，勿顺手加）：卡片点击筛选、深色模式、
+   i18n、分页；⌘K 与 Graph 的跳转让位规则（原型定稿后另议）。
