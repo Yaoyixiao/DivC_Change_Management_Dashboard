@@ -128,6 +128,10 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
     共享 Build `10725430` Relations = 4 个父 ECR + "shared · 4 ECRs" 芯片；共享 WI（如
     `10637012`）显示 2 父。**图内关系导航**：点关系行 = 展开主父链 + 卡片 flash + 抽屉原地换
     内容 + 锚点随移，Home 表格不受影响；Home 内抽屉行为回归（detail 按钮/表格同步不变）。
+11. **进度环（#40，2026-10-08 实测通过）**：右上角环 = display effort 占当前挂靠 ECR rollup 的
+    百分比——ECR 恒满环（tooltip 显总量）；子项 10–99% 环内显整数、<10% 只看弧；缺 effort 留白
+    （Build/大部分 Action/部分 WI）；真实 0 = 空环 + tooltip "0%"；**共享实体分母随挂靠父变**
+    （搜索过滤掉主 ECR 后 `10637012` 从 "0 of 40" 变 "0 of 212"）；tooltip 显 "N of M · P%"。
 
 ## 5. 调试技巧
 

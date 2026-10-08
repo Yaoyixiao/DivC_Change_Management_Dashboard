@@ -215,6 +215,10 @@ for it in items.values():
         "id": it["id"], "kind": it["kind"], "type": it["type"],
         "state": it["state"], "open": is_open(it["state"]),
         "summary": it["summary"], "created": it["created_date"] or None,
+        # display effort per rule #27 (CR-type -> rollup, others own with
+        # rollup fallback); on an ECR this IS the rollup total that the
+        # progress-ring denominators read (decision #40)
+        "effort": display_effort(it),
     }
     if it["kind"] == "work_item" and it["level"] is not None:
         n["level"] = it["level"]
