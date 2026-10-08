@@ -2631,21 +2631,25 @@ const Graph = {
     const claimed = new Set();
     let cursor = this.PAD, maxRight = 0;
 
-    // shared tail: a leaf takes the next cursor slot; a parent tops-aligns
-    // with its first child (expansion pushes descendants down, not itself)
-    const place = (node, treeKids, walkKid) => {
-      if (!treeKids.length) {
+    // shared tail: walk each kid (walkKid returns null for a kid that turned
+    // out claimed mid-walk — it becomes a cross pair instead), then a leaf
+    // takes the next cursor slot while a parent tops-aligns with its first
+    // child (expansion pushes descendants down, not itself)
+    const place = (node, kidList, walkKid) => {
+      let minY = Infinity;
+      for (const kid of kidList) {
+        const kn = walkKid(kid);
+        if (!kn) continue;
+        node.kids.push(kn);
+        if (kn.y < minY) minY = kn.y;
+      }
+      if (!node.kids.length) {
         node.y = cursor;
         cursor += NH + RH;
       } else {
-        let minY = Infinity;
-        for (const kid of treeKids) {
-          const kn = walkKid(kid);
-          node.kids.push(kn);
-          if (kn.y < minY) minY = kn.y;
-        }
         node.y = minY;
       }
+      node.exp = node.kids.length > 0;
       maxRight = Math.max(maxRight, node.x + CW);
       nodes.push(node);
       return node;
@@ -2665,15 +2669,17 @@ const Graph = {
       if (q) kids = this._searchCollapsed.has(String(id)) ? [] : reveal;
       else kids = this._expanded.has(String(id)) ? reveal : [];
       const node = { id, depth, rootId, kids: [], kidCount: reveal.length,
-                     x: this.PAD + depth * (CW + CG), y: 0, exp: kids.length > 0 };
+                     x: this.PAD + depth * (CW + CG), y: 0, exp: false };
       claimed.add(id);
-      const treeKids = [];
-      for (const k of kids) {
-        if (claimed.has(k)) crossPairs.push([id, k]);
-        else treeKids.push(k);
-      }
-      return place(node, treeKids,
-        (k) => walk(k, depth + 1, q && (inMatch || m.match(id)), rootId));
+      // claims resolve AT WALK TIME: an earlier sibling's subtree may claim a
+      // later sibling mid-walk (a dimension group's members can nest — a
+      // member's children can be members of the same group). Checking while
+      // collecting would walk the entity twice and the deeper column would
+      // never render its card.
+      return place(node, kids, (k) => {
+        if (claimed.has(k)) { crossPairs.push([id, k]); return null; }
+        return walk(k, depth + 1, q && (inMatch || m.match(id)), rootId);
+      });
     };
 
     // dimension group card (#41): children are the group's member WIs; the
@@ -2689,14 +2695,13 @@ const Graph = {
       const kids = open ? members : [];
       const node = { id: key, virtual: true, spec, depth, rootId, kids: [],
                      kidCount: spec.count, x: this.PAD + depth * (CW + CG), y: 0,
-                     exp: kids.length > 0 };
+                     exp: false };
       claimed.add(key);
-      const treeKids = [];
-      for (const mid of kids) {
-        if (claimed.has(mid)) crossPairs.push([node, mid]);
-        else treeKids.push(mid);
-      }
-      return place(node, treeKids, (mid) => walk(mid, depth + 1, true, rootId));
+      // members resolve claims at walk time too — see walk()
+      return place(node, kids, (mid) => {
+        if (claimed.has(mid)) { crossPairs.push([node, mid]); return null; }
+        return walk(mid, depth + 1, true, rootId);
+      });
     };
 
     // ECR root: an active dimension mode REPLACES the structural children
@@ -2706,7 +2711,7 @@ const Graph = {
       const mode = this._mode.get(r.id);
       if (!mode) return walk(r.id, 0, false, r.id);
       const node = { id: r.id, depth: 0, rootId: r.id, kids: [], kidCount: 0,
-                     dim: mode, x: this.PAD, y: 0, exp: true };
+                     dim: mode, x: this.PAD, y: 0, exp: false };
       claimed.add(r.id);
       return place(node, this._groupSpecs(r.id, mode),
         (spec) => walkGroup(spec, 1, r.id));
