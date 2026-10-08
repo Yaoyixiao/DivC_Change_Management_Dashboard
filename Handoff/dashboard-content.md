@@ -210,11 +210,11 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
   前），Build 附 "shared · N ECRs" 芯片。**关系行随视图就近导航**：Graph 内 = 展开主父链 +
   定位闪烁 + 抽屉原地换内容（不回写表格）；Home 内行为不变。数据侧 `DATA.builds` 注入
   （mockup_build.py，Home 卡片/表格不消费）。
-- **卡片右上角迷你进度环**（2026-10-08 #40，取代原创建月份）：卡片 display effort（#27 口径）
-  占**当前挂靠 ECR** rollup 总量的百分比——ECR 根卡恒 100% 满环（tooltip 显总量）；**分母随
-  挂靠父变**；缺 effort 留白不渲染（Build 全部 / Action 大部分 / 26% WI），真实 `0` 画空环不与
-  缺失混淆；环内数字 10–99 显整数、<10 只看弧、100% 无数字；tooltip 显精确值
-  （"28 of 73 planned · 38%"）。GRAPH 节点新增 `effort` 字段。
+- **卡片右上角迷你进度环**（2026-10-08 #40，取代原创建月份；同日用户修正：**ECR 根卡不画环**，
+  右上角改显 rollup 总量数字，tooltip 同）：**子卡** display effort（#27 口径）占**当前挂靠
+  ECR** rollup 总量的百分比；**分母随挂靠父变**；缺 effort 留白不渲染（Build 全部 /
+  Action 大部分 / 26% WI），真实 `0` 画空环不与缺失混淆；环内数字 10–99 显整数、<10 只看弧；
+  tooltip 显精确值（"28 of 73 planned · 38%"）。GRAPH 节点新增 `effort` 字段。
 - **视觉参照**：旧 ReadAcross 图谱（`Reference/dashboard.html` 的 ProjectTree：横向树 / 240px 节点卡 /
   右缘 ± 压线展开钮 / enter-leave 动效 / pan-zoom），token 换 Relate（Inter / 画布色 / 圆角，
   与 design/homepage.html 一致）。
@@ -299,4 +299,4 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 | 37 | **图谱节点点击本轮无动作**（2026-10-07）：仅选中高亮，详情入口完全后置 |
 | 38 | **Graph 实现路径 = 原型先行**（2026-10-07，细化 #2/§9）：`graph-view` 分支在 design/homepage.html 上开发 Graph 视图（含 mockup_build.py 注入图数据），原型定稿可先合回 main；渲染链适配（data_loader 重写 + 移植）另立分支。视觉参照旧 ProjectTree（Reference/dashboard.html）+ Relate token；验证以手测清单为主 |
 | 39 | **Graph 节点点击开抽屉**（2026-10-08 grill 轮，覆盖 #37 的"无动作"）：卡片正文 = 开抽屉（± 钮仍展开），选中高亮转为**抽屉锚点环**（随抽屉开关与关系导航跟随/清除）；**Build 抽屉变体** = Core（含 Maturity）/Dates/Relations、无 Effort 段，`DATA.builds` 注入全字段；**多父实体 Relations 全父显示**（3 共享 WI + 共享 Build，新者在前 + shared 芯片）；**关系行随视图就近导航**（Graph 内展开主父链+定位闪烁+抽屉原地切换，Home 表格同步行为不变）；⌘K 的 Build 组仍按 #25 另议，本轮不做 |
-| 40 | **Graph 卡片右上角迷你进度环**（2026-10-08 grill 轮，取代原创建月份）：卡片 display effort（#27 口径）占当前挂靠 ECR rollup 总量的百分比；**ECR 根卡恒 100% 满环**；**分母随挂靠父变**（非固定主 ECR，过滤改挂后百分比即变）；缺 effort **留白不渲染**（Build 全部/Action 大部分/26% WI，不与真实 0 混淆——真实 0 画空环）；环内数字 10–99 显整数、<10 无数字、100% 无数字；tooltip 显精确值；GRAPH 节点新增 `effort` 字段 |
+| 40 | **Graph 卡片右上角迷你进度环**（2026-10-08 grill 轮，取代原创建月份；同日用户修正：**ECR 根卡不画环改显 rollup 总量数字**）：子卡 display effort（#27 口径）占当前挂靠 ECR rollup 总量的百分比；**分母随挂靠父变**（非固定主 ECR，过滤改挂后百分比即变）；缺 effort **留白不渲染**（Build 全部/Action 大部分/26% WI，不与真实 0 混淆——真实 0 画空环）；环内数字 10–99 显整数、<10 无数字；tooltip 显精确值；GRAPH 节点新增 `effort` 字段 |
