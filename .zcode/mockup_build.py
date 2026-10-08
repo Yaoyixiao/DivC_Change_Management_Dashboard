@@ -169,8 +169,34 @@ if "Other" in pa_groups:
     by_process_area = [r for r in by_process_area if r["name"] != "Other"] + \
                       [r for r in by_process_area if r["name"] == "Other"]
 
+# builds feed the detail drawer only (decision #39): full display fields,
+# plannedCompletion carries the build target date (same semantic mapping the
+# actions use). No Home card/table consumer reads this key.
+builds = []
+for it in items.values():
+    if it["kind"] != "build":
+        continue
+    b = {
+        "id": it["id"],
+        "summary": it["summary"],
+        "state": it["state"],
+        "open": is_open(it["state"]),
+        "type": it["type"],
+        "maturity": it["maturity_level"] or None,
+        "plannedCompletion": it["target_date"] or None,
+        "created": it["created_date"] or None,
+        "closed": it["closed_date"] or None,
+        "owners": it["owners"] or None,
+        "project": it["project"] or None,
+        "team": it["team"] or None,
+    }
+    if it["classification"]:
+        b["classification"] = it["classification"]
+    builds.append(b)
+
 payload = {
     "ecrs": ecrs,
+    "builds": builds,
     "agg": {
         "plannedTotal": round(sum(e["planned"] or 0 for e in ecrs)),
         "actualTotal": round(sum(e["actual"] or 0 for e in ecrs)),
@@ -226,7 +252,8 @@ fallback = sum(1 for it in wi_all
                if it["type"] != CR_TYPE
                and num(it["planned_effort"]) is None
                and num(it["rollup_planned_effort"]) is not None)
-print("ECRs:", len(ecrs), "| open:", sum(1 for e in ecrs if e["open"]))
+print("ECRs:", len(ecrs), "| open:", sum(1 for e in ecrs if e["open"]),
+      "| builds:", len(builds))
 print("WI:", len(wi_all), "| with effort:", len(efforted),
       "| effort via rollup fallback:", fallback,
       "| CR-type WI:", sum(1 for it in wi_all if it["type"] == CR_TYPE))

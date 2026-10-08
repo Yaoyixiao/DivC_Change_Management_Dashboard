@@ -123,6 +123,11 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
 8. **pan/zoom**：空白处拖拽平移、wheel 缩放、右下 −/100%/+；平移钳制不拖飞；file:// 双击打开
    离线可用（零外部请求）。
 9. **可达性**：`prefers-reduced-motion` 下无过渡动效；toggle 键盘聚焦带回视野（reveal）。
+10. **节点抽屉（#39，2026-10-08 实测通过）**：卡片正文点击开抽屉，源节点带锚点环（随关系导航
+    跟随、Esc/✕ 关闭即消、焦点返还触发卡）；**Build 变体**无 Effort 段、Core 含 Maturity；
+    共享 Build `10725430` Relations = 4 个父 ECR + "shared · 4 ECRs" 芯片；共享 WI（如
+    `10637012`）显示 2 父。**图内关系导航**：点关系行 = 展开主父链 + 卡片 flash + 抽屉原地换
+    内容 + 锚点随移，Home 表格不受影响；Home 内抽屉行为回归（detail 按钮/表格同步不变）。
 
 ## 5. 调试技巧
 

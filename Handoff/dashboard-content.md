@@ -203,7 +203,13 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
   画跨列长边接入（虚线 / 共享标记区分）。
 - **kind 配色**：沿用 Home 表格 ID 徽章色板（#36）——ECR=CR 绿 `#46d6a0`、CR 型 WI=黄 `#ffc24a`、
   WP=蓝 `#6d8cff`、Action=橙 `#ff8f6d`；Task 型 WI 与 Build 的色实现时补定（不与已锁四色冲突）。
-- **节点点击**：本轮**无动作**（仅选中高亮；#37，详情入口完全后置，与 Home 行点击解耦同思路）。
+- **节点点击**：**打开详情抽屉**（2026-10-08 #39，覆盖 #37 的"无动作"）：卡片正文点击开抽屉
+  （± 钮仍展开）；选中高亮转为**抽屉锚点环**——抽屉开着时源节点带蓝环、关系导航时跟随移动、
+  关抽屉即消。**Build 抽屉变体**：Core（Type/State/**Maturity**/Owners/Team/Project）+ Dates +
+  Relations，无 Effort 段；**多父实体（共享 WI + 共享 Build）Relations 显示全部父引用**（新者在
+  前），Build 附 "shared · N ECRs" 芯片。**关系行随视图就近导航**：Graph 内 = 展开主父链 +
+  定位闪烁 + 抽屉原地换内容（不回写表格）；Home 内行为不变。数据侧 `DATA.builds` 注入
+  （mockup_build.py，Home 卡片/表格不消费）。
 - **视觉参照**：旧 ReadAcross 图谱（`Reference/dashboard.html` 的 ProjectTree：横向树 / 240px 节点卡 /
   右缘 ± 压线展开钮 / enter-leave 动效 / pan-zoom），token 换 Relate（Inter / 画布色 / 圆角，
   与 design/homepage.html 一致）。
@@ -287,3 +293,4 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 | 36 | **图谱 kind 配色沿用表格徽章色板**（2026-10-07）：ECR=CR 绿 / CR 型 WI=黄 / WP=蓝 / Action=橙；Task 型 WI 与 Build 色实现时补定 |
 | 37 | **图谱节点点击本轮无动作**（2026-10-07）：仅选中高亮，详情入口完全后置 |
 | 38 | **Graph 实现路径 = 原型先行**（2026-10-07，细化 #2/§9）：`graph-view` 分支在 design/homepage.html 上开发 Graph 视图（含 mockup_build.py 注入图数据），原型定稿可先合回 main；渲染链适配（data_loader 重写 + 移植）另立分支。视觉参照旧 ProjectTree（Reference/dashboard.html）+ Relate token；验证以手测清单为主 |
+| 39 | **Graph 节点点击开抽屉**（2026-10-08 grill 轮，覆盖 #37 的"无动作"）：卡片正文 = 开抽屉（± 钮仍展开），选中高亮转为**抽屉锚点环**（随抽屉开关与关系导航跟随/清除）；**Build 抽屉变体** = Core（含 Maturity）/Dates/Relations、无 Effort 段，`DATA.builds` 注入全字段；**多父实体 Relations 全父显示**（3 共享 WI + 共享 Build，新者在前 + shared 芯片）；**关系行随视图就近导航**（Graph 内展开主父链+定位闪烁+抽屉原地切换，Home 表格同步行为不变）；⌘K 的 Build 组仍按 #25 另议，本轮不做 |
