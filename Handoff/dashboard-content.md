@@ -215,6 +215,16 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
   ECR** rollup 总量的百分比；**分母随挂靠父变**；缺 effort 留白不渲染（Build 全部 /
   Action 大部分 / 26% WI），真实 `0` 画空环不与缺失混淆；环内数字 10–99 显整数、<10 只看弧；
   tooltip 显精确值（"28 of 73 planned · 38%"）。GRAPH 节点新增 `effort` 字段。
+- **ECR 维度展开（Team / Process Area）**（2026-10-08 #41）：ECR 卡内两个 quiet chips 切换展开
+  模式，**结构（默认）/ Team / Process Area 三模式互斥**——维度激活时结构子树收起、ECR 结构
+  钮隐藏，再点同一 chip 回结构视图（手动结构展开态保留恢复）。**分组以子卡形式展开**：同尺寸
+  240px 中性卡（无类型徽章、灰调 accent、组名为主、右上 effort 总量、卡内细占比条 + 组内 WI
+  计数 + 占比%），按 effort 降序、Other 沉底；**组卡再点开 → 组内 WI 实体卡**（ECR→组→WI 递归
+  列，成员被别处 claim 时画虚线跨边）。口径：#12（子树 WI 自身 planned_effort，Action/Build 不
+  混入，缺 effort 的 WI 仍计入组员数但值为 0，缺失维度值归 Other）；分母 = 参与求和 effort（非
+  rollup）。组内 WI 的进度环分母仍为 ECR rollup（与结构视图同尺）。组卡不参与状态分段裁剪；
+  搜索命中组名时强制展开该组成员（可手动收起）。数据侧 ECR 图节点注入 `teamDist` / `paDist`
+  （name/value/count/members）。组卡 body 点击 = 展开（#28 行语义），无抽屉。
 - **视觉参照**：旧 ReadAcross 图谱（`Reference/dashboard.html` 的 ProjectTree：横向树 / 240px 节点卡 /
   右缘 ± 压线展开钮 / enter-leave 动效 / pan-zoom），token 换 Relate（Inter / 画布色 / 圆角，
   与 design/homepage.html 一致）。
@@ -300,3 +310,4 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 | 38 | **Graph 实现路径 = 原型先行**（2026-10-07，细化 #2/§9）：`graph-view` 分支在 design/homepage.html 上开发 Graph 视图（含 mockup_build.py 注入图数据），原型定稿可先合回 main；渲染链适配（data_loader 重写 + 移植）另立分支。视觉参照旧 ProjectTree（Reference/dashboard.html）+ Relate token；验证以手测清单为主 |
 | 39 | **Graph 节点点击开抽屉**（2026-10-08 grill 轮，覆盖 #37 的"无动作"）：卡片正文 = 开抽屉（± 钮仍展开），选中高亮转为**抽屉锚点环**（随抽屉开关与关系导航跟随/清除）；**Build 抽屉变体** = Core（含 Maturity）/Dates/Relations、无 Effort 段，`DATA.builds` 注入全字段；**多父实体 Relations 全父显示**（3 共享 WI + 共享 Build，新者在前 + shared 芯片）；**关系行随视图就近导航**（Graph 内展开主父链+定位闪烁+抽屉原地切换，Home 表格同步行为不变）；⌘K 的 Build 组仍按 #25 另议，本轮不做 |
 | 40 | **Graph 卡片右上角迷你进度环**（2026-10-08 grill 轮，取代原创建月份；同日用户修正：**ECR 根卡不画环改显 rollup 总量数字**）：子卡 display effort（#27 口径）占当前挂靠 ECR rollup 总量的百分比；**分母随挂靠父变**（非固定主 ECR，过滤改挂后百分比即变）；缺 effort **留白不渲染**（Build 全部/Action 大部分/26% WI，不与真实 0 混淆——真实 0 画空环）；环内数字 10–99 显整数、<10 无数字；tooltip 显精确值；GRAPH 节点新增 `effort` 字段 |
+| 41 | **ECR 维度展开 = 分组子卡**（2026-10-08 grill 轮，用户澄清"以子卡形式展开"）：ECR 卡内 Team / Process Area chips 切换展开模式，**三模式互斥**（结构默认；结构展开态保留可恢复；维度激活时结构钮隐藏）；分组为**同尺寸中性子卡**（组名/effort 数/占比条/WI 计数，effort 降序 + Other 沉底），**组卡可再展开组内 WI 实体卡**（被 claim 成员画虚线跨边）；口径 = #12（子树 WI 自身值、Action/Build 不混、零值成员计入组员数、缺失归 Other、分母=参与和非 rollup）；组内 WI 环分母仍 ECR rollup；组卡不受状态分段裁剪、搜索命中组名强制展开；组卡 body 点击=展开无抽屉；ECR 图节点注入 `teamDist`/`paDist`（name/value/count/members） |

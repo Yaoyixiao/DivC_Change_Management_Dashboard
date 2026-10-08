@@ -209,6 +209,43 @@ payload = {
 # dedupe shared entities into single nodes with multi-parent cross edges
 # (decision #35). The tree-embedded DATA above duplicates shared WIs per ECR
 # and carries no builds — the graph must read from here, not from DATA.
+def ecr_subtree_wis(ecr_id):
+    """Work items reachable from an ECR via work_items edges, deduped by id.
+    A shared WI counts under every ECR that references it (same scoping as
+    the Home cards' collectScoped)."""
+    seen, stack = set(), [ecr_id]
+    while stack:
+        for c in children_of.get(stack.pop(), []):
+            it = items.get(c)
+            if it and it["kind"] == "work_item" and c not in seen:
+                seen.add(c)
+                stack.append(c)
+    return seen
+
+
+def dist_rows(ecr_id, key_fn):
+    """Per-ECR planned-effort shares (Home-card wording #12: subtree WI own
+    planned_effort, actions excluded, missing effort stays out, missing
+    label folds into Other, Other sinks last). Denominator is the sum of
+    participating effort — rollup would double-count CR-type children.
+    Each row also carries its member WI ids so the graph's dimension view
+    (#41) can expand a group card into the real entity cards."""
+    groups = {}
+    for wid in ecr_subtree_wis(ecr_id):
+        it = items[wid]
+        k = (key_fn(it) or "Other").strip() or "Other"
+        g = groups.setdefault(k, {"value": 0.0, "members": []})
+        g["members"].append(wid)
+        v = num(it["planned_effort"])
+        if v is not None:
+            g["value"] += v
+    rows = [{"name": k, "value": round(g["value"]),
+             "count": len(g["members"]), "members": g["members"]}
+            for k, g in groups.items()]
+    rows.sort(key=lambda r: (-r["value"], r["name"].lower()))
+    return [r for r in rows if r["name"] != "Other"] + [r for r in rows if r["name"] == "Other"]
+
+
 graph_nodes = []
 for it in items.values():
     n = {
@@ -220,6 +257,9 @@ for it in items.values():
         # progress-ring denominators read (decision #40)
         "effort": display_effort(it),
     }
+    if it["kind"] == "ecr":
+        n["teamDist"] = dist_rows(it["id"], lambda w: w["team"])
+        n["paDist"] = dist_rows(it["id"], lambda w: w["process_area"])
     if it["kind"] == "work_item" and it["level"] is not None:
         n["level"] = it["level"]
     graph_nodes.append(n)

@@ -133,6 +133,11 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
     （Build/大部分 Action/部分 WI）；真实 0 = 空环 + tooltip "0%"；**共享实体分母随挂靠父变**
     （搜索过滤掉主 ECR 后 `10637012` 从 "0 of 40" 变 "0 of 212"）；tooltip 显 "N of M · P%"；
     **ECR 根卡不画环**，右上角显 rollup 总量数字（tooltip "N planned effort (ECR total)"）。
+12. **维度展开（#41，2026-10-08 实测通过）**：ECR 卡内 Team / Process Area chips 三模式互斥切换
+    （维度激活时结构钮隐藏，回退后手动结构展开态恢复）；组卡 = 同尺寸中性卡（组名 / effort 数 /
+    占比条 / WI 计数），effort 降序 Other 沉底；组卡 body 或 ± 再展开组内 WI 实体卡（被 claim
+    成员虚线跨边；环分母仍 ECR rollup）；搜索命中组名（如 `systemtesting`）强制展开该组；
+    Expand/Collapse all 覆盖组卡；nodeH 探针 = 带 chips 的 ECR 卡（最高闭合形态）。
 
 ## 5. 调试技巧
 
