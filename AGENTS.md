@@ -9,22 +9,25 @@ DivC Change Management Dashboard —— 从 PTC Integrity / Windchill RV&S 按 `
 配置导出 ECR 层级数据（ECR → Work Item 三级 / Action / Build），生成 Excel、SQLite 与两个 JSON；
 再基于 SQLite 渲染单文件自包含 HTML dashboard（Home 检索工作台 + Graph 关系图谱）。
 
-- **阶段状态（2026-10-07）**：
+- **阶段状态（2026-10-09）**：
   - **取数链路（phase 1）**：已完成，2026-10-01 用真实 PTC 客户端验证通过，此后无改动。
-  - **dashboard 渲染链路（phase 2）**：**进行中，`src/dashboard_generator/` 本体尚未适配新库**。
-    已交付的是内容 spec、视觉设计稿与外围设施：
+  - **dashboard 渲染链路（phase 2）**：**已适配落地**（`render-pipeline` 分支，自
+    `graph-view` 分出）。`src/dashboard_generator/`（data_loader / aggregations /
+    html_template / assets 三件套）已重写为新库三表（items/edges/metadata）+ 新设计：
     - 内容 spec：`Handoff/dashboard-content.md`（信息架构/卡片/表格/搜索/图谱/聚合口径，
-      决策记录 #1–33 已锁定）；
-    - 视觉设计稿：`design/homepage.html`（单文件自包含、内嵌 Inter 与 2026-10-01 真实快照数据，
-      由 `.zcode/mockup_build.py` 从真实 DB 注入）——渲染实现时的直接参照；
+      决策记录 #1–41 已锁定）；
+    - 生产模板：`src/dashboard_generator/assets/`（template.html / styles.css / app.js，
+      由 `design/homepage.html` 原型移植；此后改前端直接改这里，原型退为视觉参照）；
+    - payload 信封：`window.__PAYLOAD__ = {data: {ecrs, builds, items}, graph,
+      aggregations, meta}`；overdue 前端自算（不进 payload）；drawer 为全字段分组；
     - PTC opener 服务：`src/dashboard_opener.py`（127.0.0.1:8766，把 ID 链接交给 OS
       ShellExecute 派发，绕过浏览器侧 Mimecast URL 重写）；`src/opener_only.py` 为独立入口；
     - 打包：`packaging/build.py` 构建 4 个 exe（UpdateDatabase / GenerateDashboard /
-      IntegrityOpener / UpdateAll）到 `Release/`。
-  - `dashboard_generator/`（data_loader / aggregations / template.html / app.js）与 `update_all.py`
-    的 dashboard 步骤**当前对新库必然报错**（`no such table: ra_op`），`packaging/build.py --smoke`
-    的 payload 断言也是旧口径——**这是预期，不要"顺手修复"**；适配工作以 dashboard-content.md
-    为内容唯一依据、design/homepage.html 为视觉/交互参照，见其 §9 实现备忘。
+      IntegrityOpener / UpdateAll）到 `Release/`；`--smoke` 断言动态对照
+      `src/output/dashboard_manifest.json`（重取数后无需改断言）。
+  - 验证基线（2026-10-09）：`node --check` + 生成 HTML 与原型 DATA/GRAPH 逐值等价 +
+    自包含正则 + 浏览器自动化冒烟 + `packaging/build.py --smoke` 全过；真实 PTC 取数与
+    同事机器验证由用户执行（手测清单见 Handoff/workflow.md §4）。
 
 ## 必读文档（改代码前）
 
@@ -44,10 +47,10 @@ extension-points）描述旧 RA-OP 看板，顶部有横幅标注：模块划分
 ```bash
 python src/selftest_fetch.py             # 取数链路唯一回归手段（离线假数据，无 pytest / CI）
 python src/fetcher.py                    # 真实取数——需要内网 + PTC 客户端 im，开发机不可跑，交给用户
-python src/generate_dashboard.py --open  # 渲染 dashboard.html；对新库当前必报错（见阶段状态）
+python src/generate_dashboard.py --open  # 渲染 dashboard.html 并用默认浏览器打开
 python src/generate_dashboard.py --serve # 渲染后启动 PTC opener 服务（127.0.0.1:8766，Ctrl+C 退出）
-python .zcode/mockup_build.py            # 从真实 DB 重建 design/homepage.html 的注入数据（会话工具，可重复跑）
-python packaging/build.py --smoke        # PyInstaller 打包 4 exe 到 Release/ + 冒烟自检
+python .zcode/mockup_build.py            # 从真实 DB 重建 design/homepage.html 的注入数据（仅维护设计参照，可重复跑）
+python packaging/build.py --smoke        # PyInstaller 打包 4 exe 到 Release/ + 冒烟自检（断言动态对照 manifest）
 ```
 
 - 环境是 **Windows + Git Bash**，Python 3.13（anaconda）。跑脚本建议加 `PYTHONUTF8=1`：
@@ -107,7 +110,8 @@ python packaging/build.py --smoke        # PyInstaller 打包 4 exe 到 Release/
 
 - 取数改动：`selftest_fetch.py` PASS（断言覆盖共享实体/三级递归/容错/日期/四件套一致性），
   再让用户跑一次真实 `fetcher.py` 确认。
-- dashboard 渲染适配落地后：`node --check src/dashboard_generator/assets/app.js` + 重新生成
-  HTML + 浏览器手测（清单见 Handoff/workflow.md；适配时需按新 dashboard 重写）+
-  `packaging/build.py --smoke`（其 payload 断言需同步换成新口径）。真实取数与同事机器
-  验证由用户执行。
+- dashboard / 前端改动：`node --check src/dashboard_generator/assets/app.js` + 重新生成
+  HTML + 浏览器验证（清单见 Handoff/workflow.md §4：不变项 + Home/Graph 手测）+
+  `packaging/build.py --smoke`。改 data_loader 后建议补 payload 等价对比（生成
+  `__PAYLOAD__` vs 设计稿 DATA/GRAPH 逐值，见 workflow.md §4 不变项 4）。真实取数与
+  同事机器验证由用户执行。

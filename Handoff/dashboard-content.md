@@ -3,13 +3,13 @@
 > **本文档是什么**：2026-10-03 经逐项访谈确认的 **dashboard 内容架构**（信息架构 / 卡片 / 表格 / 抽屉 / 搜索 / 图谱 / 聚合口径）。
 > 它是后续 UI 设计会话的**唯一内容依据**：内容清单与口径已锁定，UI 会话只做视觉与布局，不再重新讨论"放什么"。
 >
-> **状态（2026-10-07 更新）**：phase 2 渲染链路**尚未开始适配**——`src/dashboard_generator/`
-> （data_loader / aggregations / template / app.js）仍是旧 RA-OP 版本，对新库必报错，属预期。
-> 已交付：本文档（内容锁定）、首页视觉设计稿 [design/homepage.html](../design/homepage.html)
-> （由 `.zcode/mockup_build.py` 注入真实快照）、PTC opener 服务（`src/dashboard_opener.py`）与
-> 4 exe 打包（`packaging/build.py`）。**进行中**：Graph 视图原型——`graph-view` 分支上已实现
-> （2026-10-07 grill 定稿 #34–38；默认全折叠 / 主父挂靠多父 / 表格徽章色板 / 节点点击仅高亮；
-> 实测 168 节点 / 164 边 = 158 实线 + 6 虚线跨列边，手测清单见 workflow.md §4.1）。
+> **状态（2026-10-09 更新）**：phase 2 渲染链路**已适配落地**（`render-pipeline` 分支）——
+> `src/dashboard_generator/`（data_loader / aggregations / template / app.js）已重写为新库
+> 三表（items/edges/metadata）+ 新设计（原型移植），`generate_dashboard.py` 正常出网页，
+> `packaging/build.py --smoke` 两层冒烟全过（手测清单见 workflow.md §4）。本文档仍为内容
+> 唯一依据；生产模板此后以 `src/dashboard_generator/assets/` 为准，`design/homepage.html`
+> 退为视觉参照（由 `.zcode/mockup_build.py` 维护，不再进流水线）。
+> Graph 视图原型已在 `graph-view` 分支定稿（#34–41 全部实测通过）并随适配进入生产模板。
 > 取数侧事实以 [data-pipeline.md](data-pipeline.md) 为唯一
 > 权威；旧 dashboard 的模块/交互参考 [ui-components.md](ui-components.md)（schema 部分已过时）。
 

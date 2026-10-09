@@ -1,9 +1,10 @@
 # Workflow
 
-> **状态（2026-10-07）**：渲染链路（`src/dashboard_generator/`）尚未适配新 ECR 库——
-> `generate_dashboard.py` 对当前 `src/output/dashboard.db` 必报错（`no such table: ra_op`），属预期。
-> 本文区分「现在就能跑」与「旧 RA-OP 看板遗留（适配时重写）」两部分。
-> 内容与口径依据见 [dashboard-content.md](dashboard-content.md)。
+> **状态（2026-10-09）**：渲染链路（`src/dashboard_generator/`）已适配新 ECR 库并在
+> `render-pipeline` 分支落地——`generate_dashboard.py` 对 `src/output/dashboard.db`
+> 正常出网页，`packaging/build.py --smoke` 两层冒烟全过。
+> 设计原型（`design/homepage.html`）已完成历史使命，此后生产模板以
+> `src/dashboard_generator/assets/` 为准；数据/口径依据见 [dashboard-content.md](dashboard-content.md)。
 
 ## 1. 现在就能跑的命令
 
@@ -11,10 +12,10 @@
 cd D:\Users\yixiao\Documents\GitHub\DivC_Change_Management_Dashboard
 
 python src/selftest_fetch.py             # 取数链路回归（离线假数据，改 fetch 链后必跑）
-python src/generate_dashboard.py --open  # 渲染 dashboard.html —— 对新库当前必报错（见状态）
+python src/generate_dashboard.py --open  # 渲染 dashboard.html 并用默认浏览器打开
 python src/generate_dashboard.py --serve # 渲染后启动 PTC opener 服务（见 §2）
-python .zcode/mockup_build.py            # 重建设计稿数据（见 §2.3）
-python packaging/build.py --smoke        # 打包 4 exe（见 §3）
+python .zcode/mockup_build.py            # 重建设计稿数据（见 §2.3，仅维护设计参照用）
+python packaging/build.py --smoke        # 打包 4 exe + 两层冒烟（见 §3）
 ```
 
 ### 1.1 generate_dashboard.py 参数
@@ -26,8 +27,9 @@ python packaging/build.py --smoke        # 打包 4 exe（见 §3）
 | `--open` | False | 生成后用默认浏览器打开 |
 | `--serve` | False（frozen 双击 exe 时自动等效于 True） | 渲染后启动 opener 服务，阻塞至 Ctrl+C |
 
-当前对真实库运行会在 `[1/3] Loading payload` 抛 `sqlite3.OperationalError: no such table: ra_op`
-——data_loader 仍读旧 RA-OP 六表，新库是 items/edges/metadata 三表。
+输出单文件自包含 HTML（约 590KB：内嵌 Inter + 全字段 items 映射 + graph payload），
+payload 信封：`window.__PAYLOAD__ = {data: {ecrs, builds, items}, graph, aggregations, meta}`。
+data_loader 会校验 items 表必需列，指向旧库/错库时报明确的英文错误。
 
 ### 1.2 设计稿数据重建（.zcode/mockup_build.py）
 
@@ -68,12 +70,12 @@ python packaging/build.py --smoke
 | `IntegrityOpener.exe` | src/opener_only.py | 只启动 PTC opener 服务（127.0.0.1:8766） |
 | `UpdateAll.exe` | src/update_all.py | 一键 = 先取数再出网页并自动打开 |
 
-`--smoke` 两层自检：① 用 `src/output/dashboard.db` 喂 GenerateDashboard.exe、断言 payload
-与自包含性；② 取数链在 numpy 屏蔽下跑 selftest_fetch（模拟 exe 无 conda 环境）。
-
-**⚠️ 冒烟有两处旧口径/坏引用，适配落地时一并修**：① 里硬编码的 RA-OP counts（106/108/657/…）
-与新库不符，需换成新 payload 断言；② 引用的 `packaging/selftest_fetch.py` 当前**不存在**
-（应为 `src/selftest_fetch.py` 或把副本落到 packaging/），现状跑 `--smoke` 第二步必失败。
+`--smoke` 两层自检（2026-10-09 起为新口径）：① 用 `src/output/dashboard.db` 喂
+GenerateDashboard.exe，**期望计数动态读自 `dashboard_manifest.json`**（counts +
+relationship_counts；真实取数更新快照后无需改断言），并断言 aggregations 键齐全、
+`ALM_Completed ∈ closed_states`、`meta.generated_at`、自包含正则；② 取数链在 numpy
+屏蔽下跑 `src/selftest_fetch.py`（模拟 exe 无 conda 环境；旧版错引
+`packaging/selftest_fetch.py` 的坏路径已修复）。
 
 关键实现点（改动时别破坏）：
 
@@ -90,22 +92,49 @@ python packaging/build.py --smoke
 同事机器前提详见 `packaging/使用说明.md`（构建时随 exe 拷贝）：UpdateDatabase/UpdateAll 需要
 PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard / IntegrityOpener 零依赖。
 
-## 4. 渲染链路适配后的验证流程（适配时按新 dashboard 重写细则）
+## 4. 渲染链路验证流程（2026-10-09 适配落地，当日自动化冒烟全过）
 
-通用的不变项：
+通用不变项：
 
 1. **自包含校验**：生成的 HTML 无任何自动加载的外部资源——`Network` 面板 0 请求；或正则扫
    `<script|link|img|iframe …>` 的 `src/href` 不得含 `http(s)://`（用户点击的 `<a href>` 导航
    除外，`w3.org` SVG 命名空间除外）。`packaging/build.py smoke()` 里的正则可直接复用。
 2. **JS 语法**：`node --check src/dashboard_generator/assets/app.js`（只查语法不查逻辑）。
-3. **聚合基线**：无过滤时五卡数值必须与 payload 全量聚合逐值一致（dashboard-content.md §3.1
-   的自检口径）；对照 `design/homepage.html` 的 `collectScoped()`。
-4. **浏览器手测**：按 dashboard-content.md 的信息架构（Home 五卡联动 / 表格树形 / 列筛选 /
-   嵌套排序 / ⌘K 定位 / Graph）重写清单；可参考下方 §6 旧清单的纪律（键盘集、空态、
-   断网自包含、冲突筛选复位等维度）。
-5. **打包冒烟**：`packaging/build.py --smoke`（断言先换成新口径）。
+3. **聚合基线**：无过滤时五卡数值必须与 payload `aggregations` 逐值一致
+   （counts / plannedTotal / actualTotal / byProcessArea / byTeam，dashboard-content.md §3.1
+   的自检口径）；控制台可用 `collectScoped(DATA.ecrs)` 对照 `DATA.agg`。
+4. **payload 等价**（换库 / 改 data_loader 后）：生成 HTML 的 `__PAYLOAD__` 与
+   `design/homepage.html` 注入的 DATA/GRAPH 逐值对比应零差异（`overdue` 除外——生产前端自算，
+   设计稿是构建期烘焙）。
+5. **打包冒烟**：`packaging/build.py --smoke`（断言动态对照 manifest，见 §3）。
 
-### 4.1 Graph 原型手测清单（graph-view 分支，design/homepage.html；2026-10-07 实测通过）
+### 4.1 Home 手测清单（适配当日已做自动化冒烟，人工完整过一遍）
+
+1. **首屏**：console 0 error；10 行 ECR；五卡有值且与 aggregations 一致（Totals 10/129/24、
+   Effort planned/actual、PA 降序 Other 沉底、Team Top5+Other、Timeline 全部 ECR 事件）。
+2. **行展开**：行点击展开 WI 树 + Action 内联子行（共享列、ID 列树形参考线）；展开态 keyed
+   持久；叶子行无 chevron。
+3. **t-filter**：命中后代内容保留父 ECR + 自动展开命中链 + accent 高亮；清词恢复手动展开态；
+   五卡随结果集重算 + scope hint "Cards reflect N of M ECRs" + Clear filters。
+4. **状态分段** All/Open/Closed；**列筛选** Excel 式（值搜索 / 三态全选 / 值行计数 /
+   (Blanks) 沉底 / facet 语义 / 树存活语义）。
+5. **嵌套排序**：ECR 间与同层子行同列同向递归、缺值沉底、父位置仅由自身值决定。
+6. **⌘K**：输入即预览（分组 + 计数 + 每组 ≤5 + `<mark>`），选中 = 重置冲突筛选 → 展开父链 →
+   flash；Esc 先关面板再清词；ARIA combobox/listbox。
+7. **详情抽屉**：detail 按钮打开；**全字段分组** Core / Dates / Effort & Durations / Review /
+   Links / Relations（review 两个 Date Ref 已按 1899-12-30 epoch 转 ISO；配置将来新增的列落入
+   More 组）；Build 变体无 Effort 段、Core 含 Maturity；关系行就地导航 + 共享 chip；宽度拖拽
+   会话记忆；Esc / scrim 关闭并返还焦点。
+8. **opener**：点表格 ID 或抽屉 "Open in PTC" → opener 在线时唤起 PTC 客户端；离线弹英文
+   modal（提示启动 GenerateDashboard.exe / IntegrityOpener.exe）。
+9. **导出 Excel**：范围 = 当前表格（状态 + 文本 + 列筛选 + 排序 + 可见列），始终全展开，
+   带 outline 层级。
+10. **overdue**：表格 Overdue 列与抽屉徽标均为前端自算（`planned_completion_date <
+    generated_at` 且 OPEN；Action 恒空）；DB overdue_* 列不参与。
+11. **视图往返** Home/Graph 各自状态持久；print 自动回退 Home；断网 / file:// 双击可用
+    （0 外部请求）。
+
+### 4.2 Graph 手测清单（原型 2026-10-07/08 实测通过；适配产物同口径适用）
 
 1. **rail 切换**：Graph 点亮指示器；Home/Graph 往返，Home 表格无损、Graph 展开态持久
    （keyed）；print 时自动回退 Home（图布打印为空白）。
@@ -113,7 +142,7 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
    悬停换 +、展开后 −。
 3. **逐层展开**：第二列 WI/Action/Build 混排（色点/徽章 CR 绿·Task 黄·WP 蓝·Action 橙·Build 紫），
    ECR→L0→L1→L2 最多 4 列；父卡顶对齐不动、子级向下推开、连线随动效出现/收回。
-4. **节点点击（#37）**：仅选中高亮（再点取消、点空白清除），不进抽屉。
+4. **节点点击**：卡片正文点击开抽屉（#39，取代早期"仅选中高亮"的 #37 行为；见第 10 条）。
 5. **节点内搜索**（如 `NIO`）：命中卡 accent 描边、命中分支强制展开、非命中分支剪枝；
    **计数徽标随筛选联动**——keyed 复用下 stale toggle 是回归点（kidCount 归零后按钮必须消失）。
 6. **状态分段**：树语义（自身匹配或任一后代存活则可见）；Open ≈ 11/168、Closed ≈ 167/168
@@ -142,54 +171,25 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
 ## 5. 调试技巧
 
 ```js
-// 浏览器控制台看 payload（渲染链路适配后字段名以 data-contract 信封形状为准）
-console.table(window.__PAYLOAD__.aggregations.kpis);
+// 浏览器控制台看 payload（新信封：data/graph/aggregations/meta）
+console.table(window.__PAYLOAD__.aggregations.counts);
 console.log(window.__PAYLOAD__.meta);
+console.log(window.__PAYLOAD__.graph.nodes.length);
 ```
 
 - DevTools Network 面板应**完全空**（0 请求）——否则就不是自包含。
 - opener 单测：curl `http://127.0.0.1:8766/health` 应返回 `opener ok`。
 
-## 6. 旧 RA-OP 看板遗留（适配前仅供参考，适配时重写/删除）
+## 6. 旧 RA-OP 看板遗留（已随适配移除）
 
-以下为旧看板（Overview/Details/Projects 三视图 + RA-OP 六表）时代的验证资产。结构上
-`src/dashboard_generator/` 现仍与之对应（Summary / Target / ProjectStateChart / DetailsTable /
-ProjectTree / DetailsDrawer / TopSearch 等模块），故保留作参照；数据规模、口径、页面清单
-一律以 dashboard-content.md 为准。
-
-### 6.1 自检脚本（正则骨架可复用，counts 是旧口径）
-
-```bash
-python -c "
-import re, pathlib, json
-html = pathlib.Path('dashboard.html').read_text(encoding='utf-8')
-externals = [m for m in re.findall(r'(?:src|href)\s*=\s*\"https?://[^\"]+\"', html, re.I) if 'w3.org' not in m]
-assert not externals, f'external refs: {externals}'
-m = re.search(r'window\.__PAYLOAD__\s*=\s*(\{.*?\});\s*</script>', html, re.DOTALL)
-p = json.loads(m.group(1))
-# TODO(适配): counts/keys 换成新 payload 口径
-print(f'OK · size = {len(html):,} bytes')
-"
-```
-
-### 6.2 浏览器手测清单（旧看板）
-
-**Overview 页**：不闪退、Console 干净；Summary 4 KPI 与文档一致；Target 卡关闭率与口径一致；
-Hero chart Open/Closed 钻取往返、项目柱横向滚动。
-
-**Details 页**：分页 PAGE_SIZE=15 + Show more；三层展开（RA-OP → Child OP → Child CR）；
-状态筛选 All/Open/Closed；Expand/Collapse all；行尾 `>` 开抽屉，Esc / 遮罩可关。
-
-**Projects 页**：默认全折叠、计数按钮展开、子级淡入连线同步；卡片点开抽屉；搜索命中保留
-完整子树 + 蓝框；Expand all 不卡死；拖拽平移 / 滚轮缩放 / −/100%/+ 控件；空态提示。
-
-**通用**：`Ctrl+K` / `⌘K` 聚焦搜索，分组下拉 + `<mark>` 高亮 + ↑↓/Enter 键盘集 + Esc 分层
-（先关面板再清词）；搜索定位（Build → 反查关联 CR → 展开祖先链 + toast）；被日期过滤遮蔽的
-定位目标自动清过滤并 toast；断网刷新完整可用（0 请求）。
+旧看板（Overview/Details/Projects 三视图 + RA-OP 六表）的验证资产已随 2026-10-09 的适配
+淘汰：`src/dashboard_generator/` 的 template/styles/app.js 已整体替换为新设计（原文件在
+git 历史中仍可查）。自检正则骨架已并入 §4 不变项 1/5；旧三页手测清单作废，纪律维度
+（键盘集、空态、断网自包含、冲突筛选复位）已吸收进 §4.1。
 
 ## 7. 已知命令问题
 
 - **Windows console (cp1252) 不能 print Unicode**：`✓ → — ↑` 等会触发 `UnicodeEncodeError`。
   CLI 里只用 ASCII（模板/前端内不受限）。
-- **Node `--check` 只查语法**，不查逻辑；目前无 DOM 级单测（旧仓库的 mock DOM 脚本未随
-  ECR 改版迁移，适配时可考虑按新模块重建）。
+- **Node `--check` 只查语法**，不查逻辑；目前无 DOM 级单测。2026-10-09 适配时用本地 HTTP
+  + 浏览器自动化做过一轮功能冒烟（五卡/表格/抽屉/Graph/opener 兜底），回归时可复用该思路。

@@ -15,28 +15,28 @@
 ```bash
 cd D:\Users\yixiao\Documents\GitHub\DivC_Change_Management_Dashboard
 python src/selftest_fetch.py              # 取数链路回归（离线假数据）
-python src/generate_dashboard.py --open   # 渲染 dashboard.html（对新库当前必报错，见状态）
+python src/generate_dashboard.py --open   # 渲染 dashboard.html 并用默认浏览器打开
 python src/generate_dashboard.py --serve  # 渲染 + 启动 PTC opener 服务（127.0.0.1:8766）
-python .zcode/mockup_build.py             # 从真实 DB 重建设计稿注入数据
-python packaging/build.py --smoke         # 打包 4 exe 到 Release/
+python .zcode/mockup_build.py             # 从真实 DB 重建设计稿注入数据（仅维护设计参照）
+python packaging/build.py --smoke         # 打包 4 exe 到 Release/ + 冒烟自检
 ```
 
 详细用法、打包说明与验证流程见 [workflow.md](workflow.md)。
 
-## 2. 当前状态（2026-10-07）
+## 2. 当前状态（2026-10-09）
 
 | 模块 | 状态 | 位置 / 文档 |
 |---|---|---|
 | 取数链路（ECR 层级 → Excel / SQLite / 2 JSON） | ✅ 已验证 | [data-pipeline.md](data-pipeline.md)（唯一权威） |
-| Dashboard 内容 spec（信息架构 / 卡片 / 表格 / 抽屉 / 搜索 / 图谱 / 聚合口径，决策 #1–33） | ✅ 锁定 | [dashboard-content.md](dashboard-content.md) |
-| 首页视觉设计稿（Bento 五卡 + ECR 树形表格，内嵌真实快照） | ✅ | [design/homepage.html](../design/homepage.html)，数据由 [.zcode/mockup_build.py](../.zcode/mockup_build.py) 注入 |
+| Dashboard 内容 spec（信息架构 / 卡片 / 表格 / 抽屉 / 搜索 / 图谱 / 聚合口径，决策 #1–41） | ✅ 锁定 | [dashboard-content.md](dashboard-content.md) |
+| 首页视觉设计稿（Bento 五卡 + ECR 树形表格 + Graph，内嵌真实快照） | ✅ 定稿 | [design/homepage.html](../design/homepage.html)，数据由 [.zcode/mockup_build.py](../.zcode/mockup_build.py) 注入（已退为视觉参照） |
+| **渲染链路适配新库**（data_loader / aggregations / html_template / assets 重写 + 原型移植） | ✅ **已完成**（`render-pipeline` 分支） | 生产模板 [src/dashboard_generator/](../src/dashboard_generator/)；payload 信封 `{data, graph, aggregations, meta}`；overdue 前端自算；drawer 全字段 |
 | PTC opener 服务（`integrity://` 链接经 127.0.0.1:8766 → OS ShellExecute，绕过 Mimecast 重写；离线时前端英文 modal 兜底） | ✅ | [src/dashboard_opener.py](../src/dashboard_opener.py) + [src/opener_only.py](../src/opener_only.py)（独立 exe 入口）；`generate_dashboard.py --serve` 组合启动 |
-| PyInstaller 打包（4 exe → Release/） | ✅ | [packaging/build.py](../packaging/build.py) + [packaging/使用说明.md](../packaging/使用说明.md)，见 [workflow.md §3](workflow.md) |
-| **渲染链路适配新库**（data_loader / aggregations / template / app.js 重写） | ❌ **待做** | 依据 dashboard-content.md §9 实现备忘；现状代码仍是旧 RA-OP 版本 |
+| PyInstaller 打包（4 exe → Release/） | ✅ | [packaging/build.py](../packaging/build.py) + [packaging/使用说明.md](../packaging/使用说明.md)，见 [workflow.md §3](workflow.md)；`--smoke` 断言动态对照 manifest |
 
-**渲染适配时的直接参照物**：`design/homepage.html` 里的 `collectScoped()`（结果集作用域聚合）、
-`WI_INDEX / ACTION_INDEX / searchEntities()`（⌘K 扁平索引）、`display_effort()`（effort 展示口径）
-均可移植。
+**验证基线（2026-10-09）**：`node --check` + 生成 payload 与设计稿 DATA/GRAPH 逐值等价 +
+自包含正则 + 浏览器自动化冒烟（Home/表格/抽屉/Graph/opener 兜底）+ `--smoke` 两层全过；
+待用户执行：真实 PTC 取数、完整手测（workflow.md §4）、同事机器验证。
 
 ## 3. 文档索引
 
@@ -44,7 +44,7 @@ python packaging/build.py --smoke         # 打包 4 exe 到 Release/
 |---|---|---|
 | [data-pipeline.md](data-pipeline.md) | 取数链路：数据流 / 配置契约 / DB schema / 遍历语义 / 自测与扩展点 | ✅ 权威 |
 | [dashboard-content.md](dashboard-content.md) | 新 dashboard 内容架构：两视图 + 五卡 + 表格 + 抽屉 + 搜索 + 图谱 + 聚合口径 + 决策记录 | ✅ 权威 |
-| [workflow.md](workflow.md) | 命令 / 打包 / opener / 验证流程 | ✅ 已更新（旧看板手测清单标注遗留） |
+| [workflow.md](workflow.md) | 命令 / 打包 / opener / 验证流程（含新看板 Home/Graph 手测清单） | ✅ 权威 |
 | [architecture.md](architecture.md) | 旧看板数据流 / 模块依赖 / 设计决策 | ⚠️ RA-OP 遗留 |
 | [ui-components.md](ui-components.md) | 旧看板三视图 + 抽屉的语义、数据源、交互 | ⚠️ RA-OP 遗留 |
 | [data-contract.md](data-contract.md) | `__PAYLOAD__` 结构（信封形状 `{data, aggregations, meta}` 仍沿用，实体字段是旧口径） | ⚠️ RA-OP 遗留 |
@@ -76,13 +76,14 @@ edges 164 = work_items 132（含 3 处共享 WI 引用）+ actions 24 + work_ite
 
 ## 7. 接下来的工作
 
-1. **已完成（`graph-view` 分支，cc0f873）**：Graph 视图原型——在 design/homepage.html 上点亮
-   导航的 Graph 占位（视觉参照旧 ProjectTree + Relate token），mockup_build.py 扩展注入图数据
-   （flat nodes + 三类 edges，补 Build 与共享多父信息）；grill 定稿见 dashboard-content.md
-   §6 与 §10 #34–38，手测清单见 workflow.md §4.1。
-2. **渲染链路适配新库**（原型定稿后另立分支）：按 dashboard-content.md §9 重写 data_loader /
-   aggregations，从 design/homepage.html 移植 Home（五卡 + 表格）与 Graph。
-3. 适配同步项：重写 workflow.md 的浏览器手测清单；更新 `packaging/build.py --smoke` 的
-   payload 断言（现为旧 RA-OP 计数，对新库必失败）。
+1. **已完成（`graph-view` 分支，cc0f873…12b04e9）**：Graph 视图原型 + #39–41
+   （节点抽屉 / 进度环 / Team·Process Area 维度展开），grill 定稿见 dashboard-content.md
+   §6 与 §10 #34–41，手测清单见 workflow.md §4.2。
+2. **已完成（`render-pipeline` 分支，2026-10-09）**：渲染链路适配新库——重写 data_loader /
+   aggregations / html_template，原型移植为 `src/dashboard_generator/assets/` 生产模板；
+   workflow.md §4 手测清单已重写；`packaging/build.py --smoke` 断言改为动态对照 manifest。
+3. **待用户执行**：真实 PTC 取数刷新快照（`python src/fetcher.py`）后重新生成/打包验证；
+   完整浏览器手测（workflow.md §4）；同事机器分发验证；`render-pipeline` / `graph-view`
+   分支合并回 main。
 4. 收尾项（dashboard-content.md §8 明确本轮不做，勿顺手加）：卡片点击筛选、深色模式、
-   i18n、分页；⌘K 与 Graph 的跳转让位规则（原型定稿后另议）。
+   i18n、分页；⌘K 与 Graph 的跳转让位规则（另议）。
