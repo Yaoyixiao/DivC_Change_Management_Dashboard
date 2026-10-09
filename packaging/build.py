@@ -108,8 +108,12 @@ def smoke() -> None:
     """两层冒烟：exe 产物自检（GenerateDashboard）+ 取数链无 PTC 自检（numpy 屏蔽模拟）。"""
     exe = RELEASE / "GenerateDashboard.exe"
     db = SRC / "output" / "dashboard.db"
+    manifest_path = SRC / "output" / "dashboard_manifest.json"
     assert exe.exists(), f"缺少 {exe}"
     assert db.exists(), f"缺少 {db}"
+    assert manifest_path.exists(), f"缺少 {manifest_path}"
+    # 期望计数动态取自 manifest——真实取数更新快照后 smoke 不需要跟着改
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "smoke_dashboard.html"
         print(f"\n=== 冒烟：{exe.name} --db {db.name} ===")
@@ -125,15 +129,29 @@ def smoke() -> None:
         m = re.search(r"window\.__PAYLOAD__\s*=\s*(\{.*?\});\s*</script>", html, re.DOTALL)
         assert m, "HTML 里找不到 __PAYLOAD__"
         payload = json.loads(m.group(1))
-        counts = {k: len(payload["data"][k]) for k in
-                  ["ra_ops", "parent_ops", "child_ops", "deliveries", "change_requests", "builds"]}
-        assert counts == {"ra_ops": 106, "parent_ops": 108, "child_ops": 657,
-                          "deliveries": 178, "change_requests": 713, "builds": 370}, counts
-        for k in ("kpis", "opened_closed_rates", "ra_op_time", "closed_states"):
-            assert k in payload["aggregations"], k
+
+        # 数据面：实体/边计数对齐 manifest（实体去重口径，共享 WI 只算一次）
+        counts = manifest["counts"]
+        rels = manifest["relationship_counts"]
+        assert len(payload["data"]["ecrs"]) == counts["ecr"], "ecr count mismatch"
+        assert len(payload["data"]["builds"]) == counts["build"], "build count mismatch"
+        assert len(payload["data"]["items"]) == sum(counts.values()), "items count mismatch"
+        assert len(payload["graph"]["nodes"]) == sum(counts.values()), "graph node count mismatch"
+        for rel, n in rels.items():
+            assert len(payload["graph"]["edges"].get(rel, [])) == n, f"edges.{rel} count mismatch"
+
+        # 聚合面：卡片基线键齐全 + 二分类口径（ALM_Completed 属 CLOSED，决策 #14）
+        for k in ("counts", "plannedTotal", "actualTotal", "byProcessArea",
+                  "byTeam", "closed_states", "open_states"):
+            assert k in payload["aggregations"], f"aggregations missing {k}"
+        assert payload["aggregations"]["counts"] == counts, "aggregation counts mismatch"
+        assert "ALM_Completed" in payload["aggregations"]["closed_states"], \
+            "ALM_Completed must be CLOSED (decision #14)"
+        assert payload.get("meta", {}).get("generated_at"), "meta.generated_at missing"
+
         # 自包含：禁止自动加载的外部资源（script/img/link/iframe 等的 src/href），
         # 但允许 <a href="https://..."> —— 这是用户主动点击触发的导航，
-        # 不会产生页面加载时的网络请求。判定标准：Handoff/workflow.md §1 #18
+        # 不会产生页面加载时的网络请求。判定标准：Handoff/workflow.md §4
         # 「断网刷新仍能完整工作，Network 面板 0 请求」。
         externals = re.findall(
             r'<(?:script|link|img|iframe|source|audio|video)\b[^>]*?\b(?:src|href)\s*=\s*["\']https?://',
@@ -141,11 +159,11 @@ def smoke() -> None:
         )
         externals = [m for m in externals if 'w3.org' not in m]
         assert not externals, f"external auto-loaded resources: {externals}"
-        print(f"[PASS] exe 产物自检通过，size = {len(html):,} bytes，counts = {counts}")
+        print(f"[PASS] exe 产物自检通过，size = {len(html):,} bytes，counts = {counts}，edges = {rels}")
 
     print("\n=== 冒烟：取数链（numpy 屏蔽模拟 exe 环境） ===")
     result = subprocess.run(
-        [sys.executable, str(PACKAGING / "selftest_fetch.py")],
+        [sys.executable, str(SRC / "selftest_fetch.py")],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
     )
     print(result.stdout, end="")
@@ -155,7 +173,7 @@ def smoke() -> None:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="打包 3 个 exe 到 Release/")
+    ap = argparse.ArgumentParser(description="打包 4 个 exe 到 Release/")
     ap.add_argument("--smoke", action="store_true", help="构建后对 GenerateDashboard.exe 做冒烟自检")
     args = ap.parse_args()
     build()

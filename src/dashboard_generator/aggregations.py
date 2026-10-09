@@ -1,362 +1,104 @@
-"""对 load_payload() 返回的内存图做各种维度聚合。全部纯函数。
+"""Full-snapshot aggregations for the new-schema payload (items/edges era).
 
-聚合产物会被注入到 __PAYLOAD__.aggregations，供前端模块消费。
+These are the UNFILTERED baselines for the five Home bento cards
+(dashboard-content.md §3). The frontend recomputes every card from the
+current filtered result set (§3.1) and, with no filters active, the card
+values must equal these payload aggregations value-for-value
+(Handoff/workflow.md §4 invariant #3 — that equality is the self-check).
+
+Also emits the CLOSED state set actually used by the generator so debugging
+and the frontend share one dichotomy: ALM_Completed is CLOSED (decision #14).
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
 from typing import Any
 
-# 状态颜色映射 — Relate 视觉语言 + Open/Closed 语义分组：
-#   Open 类（还在路上、需要关注）= 琥珀→紫→蓝的活跃冷调色阶，按生命周期推进；
-#   Closed 类（已有定论、无风险）= 绿/青/珊瑚/灰的沉稳终态色。
-# 注意：这里只管"视觉语义"；业务统计口径见下方 OPEN_STATES / CLOSED_STATES
-# （Approved 归 Open，两处口径一致）。
-STATE_COLORS: dict[str, str] = {
-    # --- Open 类（需关注）---
-    "ALM_Initiated":  "#ffa64d",  # 琥珀 Amber Pending — 刚发起，最需关注
-    "ALM_Analysed":   "#7c6cf6",  # 紫罗兰 — 分析中
-    "ALM_Defined":    "#6366f1",  # 靛蓝 — 已定义
-    "ALM_Checked":    "#0ea5e9",  # 天蓝 — 校验中
-    "ALM_Approved":   "#0099ff",  # Azure — 已批准，放行
-    "ALM_Planned":    "#3b82f6",  # Cobalt Glow — 已计划
-    "ALM_Started":    "#145aff",  # Royal Signal — 执行中，品牌最强色压轴
-    # --- Closed 类（无风险）---
-    "ALM_Closed":     "#16a34a",  # 祖母绿 — 成功关闭（Mint #16ca2e 调深一档，大面积填充不刺眼）
-    "ALM_Realized":   "#0d9488",  # 冷青 — 价值已实现
-    "ALM_Rejected":   "#f26052",  # Coral Lost — 已否决
-    "ALM_Cancelled":  "#9ca3af",  # 灰 — 已取消，视觉退后
-}
+from .data_loader import CLOSED_STATES, num
 
-# 节点类型颜色（KPI / 树 / 柱状图共用）— Relate 冷调家族
-NODE_COLORS: dict[str, str] = {
-    "ra_op":            "#7c6cf6",  # 紫罗兰
-    "parent_op":        "#145aff",  # Royal Signal
-    "child_op":         "#0ea5e9",  # 天蓝
-    "delivery":         "#ffa64d",  # Amber Pending
-    "change_request":   "#16a34a",  # 祖母绿
-    "build":            "#f26052",  # Coral Lost
-}
-
-# 成熟度颜色 — Relate 语义色（CAT 2 最优 → CAT 5 最差）
-MATURITY_COLORS: dict[str, str] = {
-    "CAT 2": "#16a34a",
-    "CAT 3": "#84cc16",
-    "CAT 4": "#ffa64d",
-    "CAT 5": "#f26052",
-    "Not Applicable": "#9ca3af",
-    "": "#e2e8f0",
-}
-
-# 视为"已闭环"的状态集合
-# 业务定义：Approved = 已批准但仍在执行跟进，归 Open（需关注）；
-#           终态只有 Closed/Realized（正向）与 Rejected/Cancelled（负向/终止）。
-# Open  = Initiated/Defined/Analysed/Checked/Approved/Planned/Started
-# Closed = Closed/Realized/Rejected/Cancelled
-OPEN_STATES: frozenset[str] = frozenset({
-    "ALM_Initiated", "ALM_Defined", "ALM_Analysed", "ALM_Checked",
-    "ALM_Approved",  "ALM_Started", "ALM_Planned",
-})
-CLOSED_STATES: frozenset[str] = frozenset({
-    "ALM_Closed",   "ALM_Realized",
-    "ALM_Rejected", "ALM_Cancelled",
-})
+TOP_TEAMS = 5  # Effort-by-Team card folds beyond the top N into "Other"
 
 
-# ---------- KPI ----------
+def _wi_with_own_effort(items: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Card scope (#12): work items carrying an own planned_effort value.
+    Actions are excluded (their effort fill rate is 4%); rows without own
+    effort stay out of the sums but still exist for the frontend recompute."""
+    return [it for it in items.values()
+            if it["kind"] == "work_item" and num(it["planned_effort"]) is not None]
 
-def compute_kpis(payload: dict[str, Any]) -> dict[str, Any]:
-    counts = {k: len(payload[k]) for k in [
-        "ra_ops", "parent_ops", "child_ops",
-        "deliveries", "change_requests", "builds",
-    ]}
-    parent_closed = sum(1 for r in payload["parent_ops"] if r["state"] in CLOSED_STATES)
-    cr_closed     = sum(1 for r in payload["change_requests"] if r["state"] in CLOSED_STATES)
-    child_closed  = sum(1 for r in payload["child_ops"] if r["state"] in CLOSED_STATES)
-    closure_rate  = round(100 * parent_closed / max(counts["parent_ops"], 1), 1)
 
-    cr_per_child   = counts["change_requests"] / max(counts["child_ops"], 1)
-    builds_per_cr  = len(payload["edges"]["cr_to_build"]) / max(counts["change_requests"], 1)
+def compute_counts(items: dict[int, dict[str, Any]]) -> dict[str, int]:
+    """Totals card: entity-deduped kind counts (a shared WI counts once,
+    matching the manifest), not edge counts."""
+    counts = {"ecr": 0, "work_item": 0, "action": 0, "build": 0}
+    for it in items.values():
+        if it["kind"] in counts:
+            counts[it["kind"]] += 1
+    return counts
 
-    # 进行中：状态不在 CLOSED_STATES 也不在 REJECTED/CANCELLED 的 child_op
-    active_states = CLOSED_STATES | {"ALM_Rejected", "ALM_Cancelled"}
-    in_progress = sum(1 for r in payload["child_ops"] if r["state"] not in active_states)
 
+def compute_effort_totals(ecrs: list[dict[str, Any]]) -> dict[str, int]:
+    """Effort card: sum of ECR rollup fields only (ECR-level rollups are 100%
+    filled; per-WI effort is not comparable across trees)."""
     return {
-        "counts": counts,
-        "closure_rate_percent": closure_rate,
-        "closed": {
-            "parent_ops":       parent_closed,
-            "child_ops":        child_closed,
-            "change_requests":  cr_closed,
-        },
-        "in_progress_child_ops": in_progress,
-        "avg_links": {
-            "change_requests_per_child_op":  round(cr_per_child, 2),
-            "builds_per_change_request":     round(builds_per_cr, 2),
-        },
+        "plannedTotal": round(sum(e["planned"] or 0 for e in ecrs)),
+        "actualTotal": round(sum(e["actual"] or 0 for e in ecrs)),
     }
 
 
-def compute_opened_closed_rates(payload: dict[str, Any]) -> dict[str, dict[str, int | float]]:
-    """按新业务分类（Open/Closed）计算 child_op 与 change_request 的关闭率。
-
-    Returns
-    -------
-    {
-      "child_op": {total, open, closed, closed_percent},
-      "change_request": {total, open, closed, closed_percent},
-    }
-    """
-    def _bucket(records):
-        total = len(records)
-        closed = sum(1 for r in records if r.get("state") in CLOSED_STATES)
-        open_  = sum(1 for r in records if r.get("state") in OPEN_STATES)
-        pct    = round(100 * closed / max(total, 1), 1)
-        return {"total": total, "open": open_, "closed": closed, "closed_percent": pct}
-
-    return {
-        "child_op":        _bucket(payload["child_ops"]),
-        "change_request":  _bucket(payload["change_requests"]),
-    }
+def compute_by_process_area(items: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Effort-by-Process-Area card: own WI planned effort grouped by the
+    derived process_area, descending, "Other" sinks last. Mirrors the
+    mockup's rounding (per-item round, then group sum)."""
+    groups: dict[str, int] = {}
+    for it in _wi_with_own_effort(items):
+        k = it["process_area"] or "Other"
+        groups[k] = groups.get(k, 0) + round(num(it["planned_effort"]))
+    rows = [{"name": k, "value": v}
+            for k, v in sorted(groups.items(), key=lambda kv: -kv[1])]
+    return ([r for r in rows if r["name"] != "Other"]
+            + [r for r in rows if r["name"] == "Other"])
 
 
-# ---------- 分布 ----------
+def compute_by_team(items: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Effort-by-Team card: same scope, top N teams + folded "Other"."""
+    groups: dict[str, float] = {}
+    for it in _wi_with_own_effort(items):
+        k = it["team"] or "Other"
+        groups[k] = groups.get(k, 0.0) + num(it["planned_effort"])
+    ranked = sorted(groups.items(), key=lambda kv: -kv[1])
+    rows = [{"name": k, "value": round(v)} for k, v in ranked[:TOP_TEAMS]]
+    if ranked[TOP_TEAMS:]:
+        rows.append({"name": "Other",
+                     "value": round(sum(v for _, v in ranked[TOP_TEAMS:]))})
+    return rows
 
-def _dist(records: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
-    """Counter((r.get(key) or "(empty)")) → [{key, count}, ...] 按 count 倒序。"""
-    c = Counter(r.get(key) or "(empty)" for r in records)
-    return [{"key": k, "count": v} for k, v in c.most_common()]
-
-
-def compute_state_distributions(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "parent_ops":      _dist(payload["parent_ops"], "state"),
-        "child_ops":       _dist(payload["child_ops"], "state"),
-        "change_requests": _dist(payload["change_requests"], "state"),
-    }
-
-
-def compute_project_distributions(payload: dict[str, Any], top_n: int = 12) -> dict[str, Any]:
-    """对 5 类实体按 project 维度的 Top-N + Other 计数。"""
-    kinds = ["parent_ops", "child_ops", "change_requests", "deliveries", "builds"]
-    out: dict[str, Any] = {}
-    for kind in kinds:
-        records = payload[kind]
-        total = len(records)
-        c: Counter = Counter(r.get("project") or "(empty)" for r in records)
-        top = c.most_common(top_n)
-        top_sum = sum(v for _, v in top)
-        other = max(total - top_sum, 0)
-        out[kind] = {
-            "top": [{"project": k, "count": v} for k, v in top],
-            "other_count": other,
-            "total": total,
-        }
-    return out
-
-
-def compute_build_maturity(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    return _dist(payload["builds"], "maturity_level")
-
-
-# ---------- 时间线 ----------
-
-def compute_delivery_timeline(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """交付件的 target_date 按 YYYY-MM 聚合，按时间升序。"""
-    c: Counter = Counter()
-    for d in payload["deliveries"]:
-        ym = (d.get("target_date") or "")[:7]
-        if ym:
-            c[ym] += 1
-    return [{"month": k, "count": v} for k, v in sorted(c.items())]
-
-
-def compute_build_target_timeline(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """构建的 target_date 按 YYYY-MM 聚合。"""
-    c: Counter = Counter()
-    for b in payload["builds"]:
-        ym = (b.get("target_date") or "")[:7]
-        if ym:
-            c[ym] += 1
-    return [{"month": k, "count": v} for k, v in sorted(c.items())]
-
-
-# ---------- Owner / Team 排行 ----------
-
-def _split_owners(owners_field: str) -> list[str]:
-    return [s.strip() for s in (owners_field or "").split(",") if s.strip()]
-
-
-def compute_owner_rank(payload: dict[str, Any], top: int = 20) -> list[dict[str, Any]]:
-    """Owner 名下的 CR 数量排行。一个 CR 多 owner 时每个 owner 各 +1。"""
-    c: Counter = Counter()
-    for cr in payload["change_requests"]:
-        for o in _split_owners(cr.get("owners") or ""):
-            c[o] += 1
-    return [{"owner": k, "count": v} for k, v in c.most_common(top)]
-
-
-def compute_team_rank(payload: dict[str, Any], top: int = 20) -> list[dict[str, Any]]:
-    c: Counter = Counter()
-    for cr in payload["change_requests"]:
-        t = (cr.get("team") or "").strip()
-        if t:
-            c[t] += 1
-    return [{"team": k, "count": v} for k, v in c.most_common(top)]
-
-
-# ---------- Child OP × Project × State 矩阵 ----------
-
-def compute_child_op_by_project_state(
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    """大柱状图数据（全部项目各自成柱，不归并 Other；前端横向滚动查看）。
-
-    Returns
-    -------
-    {
-      "projects":  [...],                # 行顺序：按 total 倒序
-      "states":    [...],                # 列顺序：按全局该 state 出现次数倒序
-      "matrix":    [[c00, c01, ...],     # shape = (len(projects), len(states))
-                    ...
-                   ],
-      "totals":    [...],                # 每行总数
-      "top_n":     12,
-    }
-    """
-    child_ops = payload["child_ops"]
-    project_counts = Counter(r.get("project") or "(empty)" for r in child_ops)
-    # 每个项目独立成柱，不再截断 / 归并 "__other__"
-    projects_all = [p for p, _ in project_counts.most_common()]
-
-    matrix_rows: dict[str, Counter] = {p: Counter() for p in projects_all}
-    for r in child_ops:
-        p = r.get("project") or "(empty)"
-        s = r.get("state") or "(empty)"
-        matrix_rows[p][s] += 1
-
-    # 行顺序：按该项目的 Child OP 总数倒序
-    projects_sorted = sorted(
-        projects_all,
-        key=lambda p: sum(matrix_rows[p].values()),
-        reverse=True,
-    )
-
-    # 列顺序：按所有项目该 state 总数倒序（稳定图例位置）
-    state_totals: Counter = Counter()
-    for row in matrix_rows.values():
-        state_totals.update(row)
-    states_sorted = [s for s, _ in state_totals.most_common()]
-
-    matrix = [
-        [row.get(s, 0) for s in states_sorted]
-        for row in (matrix_rows[p] for p in projects_sorted)
-    ]
-    totals = [sum(matrix_rows[p].values()) for p in projects_sorted]
-
-    return {
-        "projects": projects_sorted,
-        "states":   states_sorted,
-        "matrix":   matrix,
-        "totals":   totals,
-    }
-
-
-# ---------- RA-OP 时间：优先用自身 created_date，缺失时退回子树最早 target_date 代理 ----------
-
-def compute_ra_op_time(payload: dict[str, Any]) -> dict[int, str | None]:
-    """对每个 RA-OP，优先取 DB 中的 created_date；缺失（旧库）时从其
-    5 层子树（child_op → delivery / change_request → build）收集 target_date
-    取最小值作为「RA-OP effective start」的近似。
-
-    返回：{ ra_op_id (int): "YYYY-MM-DD" 或 None }。
-    """
-    # child_op → [delivery_id]
-    child_to_del: dict[int, list[int]] = defaultdict(list)
-    for e in payload["edges"]["related_to_delivery"]:
-        child_to_del[e["related_id"]].append(e["delivery_id"])
-    # child_op → [cr_id]
-    child_to_cr: dict[int, list[int]] = defaultdict(list)
-    for e in payload["edges"]["related_to_cr"]:
-        child_to_cr[e["related_id"]].append(e["change_request_id"])
-    # cr → [build_id]
-    cr_to_b: dict[int, list[int]] = defaultdict(list)
-    for e in payload["edges"]["cr_to_build"]:
-        cr_to_b[e["change_request_id"]].append(e["build_id"])
-    # id → target_date
-    del_date: dict[int, str | None] = {d["id"]: d.get("target_date") for d in payload["deliveries"]}
-    build_date: dict[int, str | None] = {}
-    for b in payload["builds"]:
-        build_date[b["id"]] = b.get("target_date") or b.get("planned_completion_date")
-    # ra_op → [child_id]
-    ra_to_children: dict[int, list[int]] = defaultdict(list)
-    for e in payload["edges"]["ra_to_child"]:
-        ra_to_children[e["ra_op_id"]].append(e["child_op_id"])
-
-    result: dict[int, str | None] = {}
-    for ra in payload["ra_ops"]:
-        created = ra.get("created_date")
-        if isinstance(created, str) and len(created) >= 10:
-            result[ra["id"]] = created
-            continue
-        dates: list[str] = []
-        for cid in ra_to_children.get(ra["id"], []):
-            for did in child_to_del.get(cid, []):
-                d = del_date.get(did)
-                if d: dates.append(d)
-            for crid in child_to_cr.get(cid, []):
-                for bid in cr_to_b.get(crid, []):
-                    d = build_date.get(bid)
-                    if d: dates.append(d)
-        valid = [d for d in dates if isinstance(d, str) and len(d) >= 10]
-        result[ra["id"]] = min(valid) if valid else None
-    return result
-
-
-# ---------- 入口 ----------
 
 def compute_all_aggregations(payload: dict[str, Any]) -> dict[str, Any]:
+    """Entry point consumed by generate_dashboard.py -> __PAYLOAD__.aggregations."""
+    items = payload["items"]
+    ecrs = payload["ecrs"]
+    totals = compute_effort_totals(ecrs)
+    observed = {it.get("state") for it in items.values() if it.get("state")}
     return {
-        "kpis":                      compute_kpis(payload),
-        "opened_closed_rates":       compute_opened_closed_rates(payload),
-        "state_distributions":       compute_state_distributions(payload),
-        "project_distributions":     compute_project_distributions(payload),
-        "build_maturity":            compute_build_maturity(payload),
-        "delivery_timeline":         compute_delivery_timeline(payload),
-        "build_target_timeline":     compute_build_target_timeline(payload),
-        "owner_rank":                compute_owner_rank(payload),
-        "team_rank":                 compute_team_rank(payload),
-        "child_op_by_project_state": compute_child_op_by_project_state(payload),
-        "ra_op_time":                compute_ra_op_time(payload),
-        "state_colors":              STATE_COLORS,
-        "node_colors":               NODE_COLORS,
-        "maturity_colors":           MATURITY_COLORS,
-        "open_states":               list(OPEN_STATES),
-        "closed_states":             list(CLOSED_STATES),
+        "counts": compute_counts(items),
+        "plannedTotal": totals["plannedTotal"],
+        "actualTotal": totals["actualTotal"],
+        "byProcessArea": compute_by_process_area(items),
+        "byTeam": compute_by_team(items),
+        # dichotomy definition + observed open states (debugging aid)
+        "closed_states": sorted(CLOSED_STATES),
+        "open_states": sorted(s for s in observed if s not in CLOSED_STATES),
     }
 
 
 if __name__ == "__main__":
-    # CLI 自检：python -m dashboard_generator.aggregations
-    from data_loader import load_payload
+    # CLI self-check: python -m dashboard_generator.aggregations
     import json
+    import sys
+    from pathlib import Path
 
-    p = load_payload()
-    aggs = compute_all_aggregations(p)
-    print(json.dumps(
-        {
-            "kpis": aggs["kpis"],
-            "child_op_by_project_state_keys":
-                list(aggs["child_op_by_project_state"].keys()),
-            "child_op_by_project_state_shape":
-                [len(aggs["child_op_by_project_state"]["projects"]),
-                 len(aggs["child_op_by_project_state"]["states"])],
-            "top_owner": aggs["owner_rank"][:3],
-            "delivery_timeline_range":
-                [aggs["delivery_timeline"][0]["month"] if aggs["delivery_timeline"] else None,
-                 aggs["delivery_timeline"][-1]["month"] if aggs["delivery_timeline"] else None],
-        },
-        ensure_ascii=False,
-        indent=2,
-    ))
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from dashboard_generator.data_loader import load_payload
+
+    print(json.dumps(compute_all_aggregations(load_payload()),
+                     indent=2, ensure_ascii=False))

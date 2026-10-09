@@ -28,7 +28,7 @@ else:
     sys.path.insert(0, str(ROOT))
 
 from dashboard_generator.aggregations import compute_all_aggregations  # noqa: E402
-from dashboard_generator.data_loader import load_payload  # noqa: E402
+from dashboard_generator.data_loader import load_payload, summarize  # noqa: E402
 from dashboard_generator.html_template import write_html  # noqa: E402
 
 
@@ -72,9 +72,9 @@ def main() -> int:
 
     print(f"[1/3] Loading payload from {db_path} …")
     payload = load_payload(db_path)
-    counts = {k: len(payload.get(k) or []) for k in
-              ["ra_ops", "parent_ops", "child_ops", "deliveries", "change_requests", "builds"]}
+    counts = summarize(payload)
     print(f"      counts: {counts}")
+    print(f"      generated_at: {payload.get('meta', {}).get('generated_at', 'n/a')}")
 
     print("[2/3] Computing aggregations …")
     aggregations = compute_all_aggregations(payload)
@@ -82,7 +82,12 @@ def main() -> int:
     print(f"[3/3] Writing {args.out} …")
     out_path = Path(args.out).resolve()
     write_html(
-        {"data": payload, "aggregations": aggregations, "meta": payload.get("meta") or {}},
+        {
+            "data": {k: payload[k] for k in ("ecrs", "builds", "items")},
+            "graph": payload["graph"],
+            "aggregations": aggregations,
+            "meta": payload.get("meta") or {},
+        },
         out_path,
     )
     size_kb = out_path.stat().st_size / 1024
