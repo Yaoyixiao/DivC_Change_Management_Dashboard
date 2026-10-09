@@ -1,130 +1,99 @@
 # Known Issues
 
-> **⚠️ 过时声明（2026-10-07）**：本文按旧 RA-OP 看板记录已知问题与口径差异（其中的"当前"
-> 数字均指旧库）。`ALM_Completed` 状态、overdue 垃圾值、`Date Ref` 序列号等新库数据质量坑
-> 及处理口径见 [dashboard-content.md](dashboard-content.md) §1.3/§7。本文其余条目适配时复核。
+> **状态（2026-10-09 重写）**：按当前渲染链路（新 ECR 库 + 原型移植版前端）整理。
+> 新库数据质量坑（`ALM_Completed` 状态、overdue 垃圾列、`Date Ref` 序列号）与处理口径见
+> [dashboard-content.md](dashboard-content.md) §1.3/§7，不在本文重复。旧 RA-OP 时代的条目
+> 已随重写消解（见文末核销记录）。
 
 按修复优先级排序。
 
 ---
 
-## 1. ~~app.js 内置 CLOSED_STATES 旧口径，与 aggregations 不一致~~（已修复，2026-09-27）
+## 1. PTC 服务器地址硬编码在前端
 
-**状态**：✅ 已修复。app.js 的 `CLOSED_STATES` 改为 `let`，boot 时以 `agg.closed_states`（聚合端唯一口径）覆盖，默认值仅聚合缺失时兜底。DetailsTable / ProjectTree / DetailsDrawer / TopSearch 的 Open/Closed 判定随之统一。回归覆盖：`tests/mock_dom_test.js` 的 "CLOSED_STATES 修复" 断言。
+**位置**：[src/dashboard_generator/assets/app.js](../src/dashboard_generator/assets/app.js) `INTEGRITY_HOST`
+（opener 段，约 L2416）
 
----
+`integrity://` 深链的 host（`skobde-mks-im.kobde.trw.com:7001`）写死在 app.js 里；换服务器要
+改码 + 重新生成/打包，且 `packaging/使用说明.md` 的 hostname 描述要同步。单服务器内网场景下
+可接受；多环境时再考虑挪进 payload（meta 段）由取数侧注入。
 
-## 2. html_template.py 残留死代码
-
-**位置**：[src/dashboard_generator/html_template.py:38-69](../src/dashboard_generator/html_template.py#L38-L69)
-
-`{{DATE_RANGE}}` 占位符已不再用 —— template.html 里日期 pill 被改成 `<select>` 后，这个字符串再也不会出现。
-
-`_render_placeholders()` 和 `_patch_date_range()` 这两个函数现在都是 noop，但还在跑。
-
-**修复**：删 `_patch_date_range` 调用 + 函数体，简化 `_render_placeholders`。
-
-**优先级**：极低（清理性工作）。
+**优先级**：低（环境稳定时无感）。
 
 ---
 
-## 3. Hero chart 的孤岛 state segment 不显示
+## 2. Release/ 的 exe 二进制入Git 库，仓库随每次重打包持续变大
 
-**位置**：[src/dashboard_generator/assets/app.js](../src/dashboard_generator/assets/app.js) `ProjectStateChart.render`
+2026-10-09 按用户决定把 4 个 exe（约 58MB）随 `build(release)` 提交入库。每次重新打包都是
+全新的 ~58MB blob（Git 对二进制无增量），十次就是 ~600MB。若只是分发给同事，建议后续改用
+GitHub Release 附件承载、仓库只留代码；历史 blob 已推上去，需要瘦身时得走 history rewrite
+（破坏性操作，先与用户确认）。
 
-钻取时（比如 Open 子状态：Initiated/Defined/Analysed/Checked/Started/Planned），如果某个 state 在所有项目里都计数为 0，segment 不会画。这没问题。
-
-但如果一个项目的某 state 计数 = 0，那个项目柱子里**该 state 不会留下空白**（其他 state 紧贴堆叠）。这是 SVG stacking 的天然行为，**不是 bug**。
-
-但视觉上可能在某段堆叠处有"突变"，特别是 Closed 子状态里某些项目 Closed=0 时。
-
-**修复**：可加白色 hairline 分隔每段；本期未做。
-
-**优先级**：低。
+**优先级**：中（短期无碍，长期仓库膨胀）。
 
 ---
 
-## 4. ~~date-range-select 的年份选项是动态生成~~（已废弃）
+## 3. 浏览器兼容性未全测 + 依赖的 modern CSS
 
-日期过滤已从年份 `<select>` 改为**日期区间双 input**（`#date-from` / `#date-to`），min/max 取自 `agg.ra_op_time` 实际范围（`Summary._initDateInputs`）。旧 select 相关的问题不再存在。潜在的小限制：日期 input 的 min/max 只覆盖有 RA-OP 时间的范围，想选范围外的日期需手输。
-
----
-
-## 5. 未实现的功能（来自原 Plan 但本期跳过）
-
-| 功能 | 计划位置 | 状态 |
-|---|---|---|
-| 分层树（dendrogram） | Plan/04 | **已实现**（Projects 页 `ProjectTree` 横向节点树，2026-09） |
-| 原地展开下钻（drilldown 子看板） | Plan/05 | **不做**（Hero chart 已用 legend pill 钻取替代） |
-| Child OP × Project × State 大堆叠柱状图作为独立模块 | Plan/06 | **合并进 Hero chart**，现作为其默认视图的子状态 |
-| 深色模式 | Plan 03 §"Key decisions" | **不做**（用户明确"只浅色"） |
-| README 章节（HTML dashboard 用法） | Plan/07 | **未做**（如果要给同事用，先补这个） |
-| E2E 自检脚本（test_dashboard.py） | Plan/07 | **未做**（用 workflow.md 里的 inline 命令替代） |
-
----
-
-## 6. 数据 / DB 限制
-
-### ra_op 已有 created_date
-`compute_ra_op_time` 优先取 created_date，缺失（旧库）时回退子树最早 target_date。当前 DB 全部 106 条都有时间（0 null）。若未来出现无日期的 RA-OP：日期过滤激活时被排除（`Summary._cascade` / `DetailsTable._filtered` / `ProjectTree._roots` 同一语义）。
-
-### CR / build 有孤岛
-约 180 CR + 99 build 不挂在任何 RA-OP 子树下，**永远不进 Summary**（不论选哪个时间窗）。如果用户希望这些孤岛被算进 "All time"，需要改 `Summary._cascade` 的初始 raIds 包含所有 RA-OP 不管时间。Projects 树同样只显示从 RA-OP 可达的节点（533/713 CR）。
-
-### closed_rate 用旧 CLOSED_STATES 在 aggregations.compute_kpis
-`kpis.closure_rate_percent` 还是用旧的 `{ALM_Closed, ALM_Realized, ALM_Checked, ALM_Approved}` 计算（Parent-OP 的关闭率）。`opened_closed_rates` 是用新口径。
-
-实际差别：Parent-OP 新口径会多算 Rejected/Cancelled（旧的不算）。如果想统一：
-- 改 `compute_kpis` 用新 CLOSED_STATES
-- 或弃用 `closure_rate_percent`，统一用 `opened_closed_rates`
-
-**当前不影响任何 UI**，因为没有 card 显示 Parent 关闭率（Target 卡只显示 child_op / change_request）。
-
----
-
-## 7. Plan/ 文件与代码状态不同步
-
-`Plan/00_overview.md` 顶部有指向 `08_redesign_jajanken_style.md` 的指针，但 Plan/01..07 仍描述了**未实现**的原始设计（树、drilldown、堆叠柱状图独立卡）。
-
-接手会话如果读 Plan/01..07 会被误导。**优先读 `Handoff/README.md` + `architecture.md`**。
-
-如果想让 Plan/ 跟实际代码同步，建议：
-- 删 Plan/01..07（或标 [DEPRECATED]）
-- Plan/00_overview.md 顶部指针改成 → `Handoff/README.md`
-
----
-
-## 8. 浏览器兼容性未全测
-
-只在 Chromium 系手测过（ZCode 内嵌浏览器 / Edge）。
-
+只在 Chromium 系手测过（ZCode 内嵌浏览器 / Edge；2026-10-09 的自动化冒烟同为 Chromium）。
 未测：Firefox、Safari、移动端。
 
-**实际用到的 modern features**（低于以下版本会缺功能/样式）：
-- `:has()`（Hero chart hover 聚光）—— Chrome 105+ / Safari 15.4+ / Firefox 121+
-- CSS `translate` 独立属性（Projects 树展开动效）—— Chrome 104+ / Safari 14.1+ / Firefox 72+
-- `overflow: clip`（树视口防焦点滚动）—— Chrome 90+ / Safari 16+ / Firefox 81+
-- `<input type="date">`、CSS Grid、`gap` —— 广泛支持
+实际用到的 modern features（低于以下版本会缺功能/样式）：
+
+- `:has()`（styles.css 5 处）—— Chrome 105+ / Safari 15.4+ / Firefox 121+
+- `overflow: clip`（`#g-viewport` 防焦点滚动）—— Chrome 90+ / Safari 16+ / Firefox 81+
+- `AbortController` + `fetch`（opener 超时）—— 现代浏览器均支持
 
 SVG 用 `viewBox`，无兼容问题。**优先级**：低（公司内网通常是 Chrome/Edge）。
 
 ---
 
-## 9. Target 卡 CHILD CR closure 显示 "99%" 而非 "99.0%"（轻微）
+## 4. 无 DOM 级自动化测试
 
-**位置**：[src/dashboard_generator/assets/app.js](../src/dashboard_generator/assets/app.js) `Target.render`
+`node --check` 只查语法。2026-10-09 适配时做过**一次性**浏览器自动化冒烟（本地 HTTP 伺服
+生成物，逐项检查五卡/行展开/⌘K/抽屉全字段/Graph 展开计数/维度分组/Build 变体/opener 兜底），
+但没有沉淀成可重复运行的脚本（旧仓库的 `tests/mock_dom_test.js` 未迁移，目录已不存在）。
+回归目前靠 workflow.md §4 手测清单 + payload 等价对比。
 
-```js
-const num = Number(Number(pct).toFixed(1));
-$(`#p-${id}`).textContent = `${num}%`;
-```
+**修复思路**：把当日的冒烟步骤写成 Playwright 脚本入库，或至少把 payload 等价对比做成
+`python tools/check_payload.py`。
 
-`Number(...)` 把 `toFixed(1)` 的尾零丢了：99.0 → "99%"（64.4 不受影响）。workflow.md §4 的期望值写的是 99.0%。
+**优先级**：中（改动频繁时价值上升）。
 
-**修复**：显示原始 toFixed 字符串即可：
+---
 
-```js
-$(`#p-${id}`).textContent = `${Number(pct).toFixed(1)}%`;
-```
+## 5. 设计稿与生产模板开始分叉
 
-**优先级**：极低（纯显示）。
+`design/homepage.html` 已退为视觉参照（生产模板在 `src/dashboard_generator/assets/`），
+但 `.zcode/mockup_build.py` 仍在维护它。此后前端的真实改动只会发生在 assets/，设计稿会
+**静默过期**——将来按设计稿排查问题时要先确认它是否还反映现状。
+
+**修复思路**：设计定稿后归档设计稿（顶部加"已由生产模板取代"横幅），或让 mockup_build
+直接消费生产模板。
+
+**优先级**：低（知道即可）。
+
+---
+
+## 6. 仓库卫生：无 .gitignore + 遗留跟踪的 .pyc
+
+`packaging/build/`、`packaging/dist/`、`packaging/*.spec`、`__pycache__/` 每次构建后都以
+未跟踪噪音出现在 `git status`；`src/__pycache__/` 是历史遗留的**已跟踪** .pyc（AGENTS.md 已
+提醒别再新增提交）。加 .gitignore 前先与用户确认（AGENTS.md 约定）。
+
+**优先级**：低（纯卫生）。
+
+---
+
+## 附：旧条目核销记录（2026-10-09 随渲染链路重写）
+
+| 旧条目 | 结局 |
+|---|---|
+| #1 app.js CLOSED_STATES 旧口径 | 重写后 open/closed 由 payload 实体旗标 + `aggregations.closed_states`（含 `ALM_Completed`）决定，前端不再自持状态集 |
+| #2 html_template `{{DATE_RANGE}}` 死代码 | 已删（重写后的 html_template 无占位符） |
+| #3 Hero chart 孤岛 segment | 模块已不存在（旧 ProjectStateChart 未移植） |
+| #4 date-range 年份 select | 交互已不存在（新看板无日期区间过滤） |
+| #5 未实现功能表（Plan 时代） | 全部随新 IA 取代或仍明确不做（见 dashboard-content.md §8） |
+| #6 数据/DB 限制（ra_op 时间、CR/build 孤岛、closure_rate 双口径） | 旧库特有；新库口径以 dashboard-content.md §1.3/§7 为准 |
+| #7 Plan/ 目录与代码不同步 | `Plan/` 目录已不存在 |
+| #9 Target 卡尾零显示 | 卡片已不存在 |

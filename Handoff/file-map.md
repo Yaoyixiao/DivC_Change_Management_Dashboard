@@ -1,156 +1,141 @@
 # File Map
 
-> **⚠️ 过时声明（2026-10-07）**：本文按旧 RA-OP 看板记录文件职责与函数清单/行数。此后新增
-> `src/dashboard_opener.py`（opener 服务）、`src/opener_only.py`（独立入口）、
-> `src/dashboard_generator/assets/fonts.css`（内嵌 Inter）、`design/homepage.html`（视觉设计稿）、
-> `packaging/build.py`（4 exe 打包）；`assets/app.js`、`styles.css` 也有大量改动。渲染适配
-> 落地后重写本文。
+> **状态（2026-10-09 重写）**：按当前渲染链路（新 ECR 库 + 原型移植版前端）记录文件职责。
+> 取数链路文件（fetcher / relationship_builder / *_writer / ecr_config / parser / selftest_fetch，
+> 见 [data-pipeline.md](data-pipeline.md)）不在本文范围。旧 RA-OP 版本可在 git 历史中查。
 
 ## Python 端
 
-### [src/generate_dashboard.py](../src/generate_dashboard.py) — 77 行
+### [src/generate_dashboard.py](../src/generate_dashboard.py) — 125 行
 
-CLI 入口。**每次执行的工作流第一步**。
+CLI 入口：`load_payload` → `compute_all_aggregations` → `write_html`，打印 counts / generated_at
+/ 文件大小。
 
 ```bash
-python src/generate_dashboard.py [--db PATH] [--out PATH] [--open]
+python src/generate_dashboard.py [--db PATH] [--out PATH] [--open] [--serve]
 ```
 
-- `--db` 默认 `src/output/dashboard.db`
-- `--out` 默认 `./dashboard.html`
-- `--open` 生成后用系统默认浏览器打开
+- `--db` 默认 `src/output/dashboard.db`（frozen：exe 目录 `output\`）
+- `--out` 默认 `./dashboard.html`（frozen：exe 目录）
+- `--open` 生成后用默认浏览器打开；`--serve` 渲染后启动 opener（阻塞至 Ctrl+C）
+- frozen 双击 exe（零参数）自动等效 `--serve`；`ROOT` 以 exe 目录为基准（onefile 的 `__file__`
+  在临时解压目录）
+- 组装 payload 信封 `{data: {ecrs, builds, items}, graph, aggregations, meta}` 交给 `write_html`
 
-做的事：调 `load_payload` → `compute_all_aggregations` → `write_html`，打印 counts 与文件大小。
+### [src/dashboard_generator/data_loader.py](../src/dashboard_generator/data_loader.py) — 329 行
 
-### [src/dashboard_generator/data_loader.py](../src/dashboard_generator/data_loader.py) — 99 行
+唯一读 DB 的地方。模块级常量：
 
-唯一读 DB 的地方。返回：
+| 常量 | 内容 |
+|---|---|
+| `CLOSED_STATES` | `{ALM_Closed, ALM_Realized, ALM_Rejected, ALM_Cancelled, ALM_Completed}`（决策 #14） |
+| `CR_TYPE` | `"ALM_Change Request"`（effort 展示规则 #27 的分型依据） |
+| `REQUIRED_COLUMNS` | 生成 payload 自身依赖的 20 列（校验用；全 schema 仍由 ECR_Config 动态决定） |
+| `DROPPED_COLUMNS` | 两个 `overdue_*` 垃圾列，永不进 payload（§7 规则 2） |
+| `RELATIONS` | `work_items / actions / work_item_for` |
 
-```python
-{
-  "meta": {"schema_version", "generated_at", "root_query_definition"},
-  "ra_ops":          [{id, summary, project, created_date}],
-  "parent_ops":      [{id, state, summary, project}],
-  "child_ops":       [{id, state, summary, project}],
-  "deliveries":      [{id, summary, project, target_date}],
-  "change_requests": [{id, state, summary, project, team, owners}],
-  "builds":          [{id, summary, project, target_date,
-                       planned_completion_date, maturity_level}],
-  "edges": {
-    "ra_to_parent":        [{ra_op_id, parent_op_id}],
-    "ra_to_child":         [{ra_op_id, child_op_id}],
-    "related_to_delivery": [{related_id, delivery_id}],
-    "related_to_cr":       [{related_id, change_request_id}],
-    "cr_to_build":         [{change_request_id, build_id}],
-  },
-}
-```
+主要函数：
 
-注意 `related_id` 字段是 polymorphic —— 对 `related_to_delivery` 是 child_op_id，对 `related_to_cr` 大多数也是 child_op_id（用统计确认，详见 `compute_ra_op_time`）。
+| 函数 | 职责 |
+|---|---|
+| `num(v)` | TEXT 数值列 → float/None（effort、时长） |
+| `display_effort(it)` | #27 展示规则：CR 型 → rollup；其余 → 自身 `planned_effort`，空回退 rollup |
+| `_validate_columns` | items 表必需列校验，指向旧库/错库报明确英文错误 |
+| `load_payload(db_path)` | 读三表 → `{meta, ecrs, builds, items, graph}`（见模块 docstring 的形状图） |
+| `_wi_node` / `_ecr_entry` / `_build_entry` | 树构造：WI 递归子树 / ECR 条目（counts 实体口径）/ Build 抽屉条目 |
+| `_ecr_subtree_wis` / `_dist_rows` | ECR 子树 WI 集合 / Team·Process Area 工时份额（#12、#41，含 members） |
+| `_build_graph` | flat nodes（含 `effort`/`teamDist`/`paDist`/`level`）+ 三类 edges |
+| `summarize(payload)` | CLI 打印与冒烟用的计数 |
 
-### [src/dashboard_generator/aggregations.py](../src/dashboard_generator/aggregations.py) — 353 行
+**注意**：`overdue` 刻意不进 payload——前端按 `meta.generated_at` 自算（§7 规则 2）。
 
-13 个聚合函数 + 3 个颜色字典 + 入口 `compute_all_aggregations`。
+### [src/dashboard_generator/aggregations.py](../src/dashboard_generator/aggregations.py) — 104 行
 
-| 类别 | 常量 / 函数 | 输出 |
+五卡**无过滤基线**（前端按结果集重算，二者必须逐值相等——workflow.md §4 不变项 3）：
+
+| 函数 | 输出 |
+|---|---|
+| `compute_counts(items)` | 实体去重 kind 计数（Totals 卡） |
+| `compute_effort_totals(ecrs)` | ECR rollup planned/actual 总和（Effort 卡） |
+| `compute_by_process_area(items)` | WI 自身 `planned_effort` 按 process_area，降序 Other 沉底 |
+| `compute_by_team(items)` | 同口径，Top 5（`TOP_TEAMS`）+ 折叠 Other |
+| `compute_all_aggregations(payload)` | 入口：以上全部 + `closed_states` / `open_states` |
+
+### [src/dashboard_generator/html_template.py](../src/dashboard_generator/html_template.py) — 85 行
+
+拼装单文件自包含 HTML：`fonts.css`（base64 Inter）→ `styles.css` → `template.html`（body）→
+`window.__PAYLOAD__ = <json>` → `app.js`。`_dump_json` 做 compact 序列化 + `</` → `<\/`
+转义（防 summary 里的 `</script>` 截断标签）。`render_html(payload) → str` /
+`write_html(payload, path)`。标题 `ECR Workbench — Home`（常量 `TITLE`）。
+
+## 前端资产（src/dashboard_generator/assets/）
+
+### [template.html](../src/dashboard_generator/assets/template.html) — 172 行
+
+body 标记（head 由 html_template 组装）。**所有 id 必须与 app.js 的 `$()` 一一对应**：
+
+- 左侧 rail：`global-search`（⌘K 输入）+ Home 项（首个 `a.rail-item`，无 data-view）+
+  Graph 项（`[data-view="graph"]`）+ `rail-print`
+- Bento 五卡：`bento-scope`（范围提示）/ `card-totals` + `kpi-row` / `effort-kpis` /
+  `timeline` / `pa-list` / `donut` + `team-legend`
+- 表格卡：`seg`（状态分段）/ `t-filter` / `t-clear` / `t-export` / `t-cols-btn` /
+  `t-cols-pop` / `t-tbl`（`t-thead`/`t-tbody`）/ `col-pop`（列筛选单例弹层）/
+  `t-foot-count` / `t-sum-p` / `t-sum-a`
+- Graph 视图：`g-viewport` > `g-canvas` + `g-links`（SVG）；浮动件 `g-seg` / `g-filter` /
+  `g-expand` / `g-collapse` / `g-caption` / `g-zoom-in` / `g-zoom-out` / `g-zoom-reset`
+- 全局：`search-panel`（⌘K 下拉）/ `drawer-scrim` / 抽屉 `drawer`（`drawer-handle` /
+  `drawer-close` / `drawer-idrow` / `drawer-title` / `drawer-body` / **`drawer-open-ptc`**——
+  opener 接线钩子）
+
+### [styles.css](../src/dashboard_generator/assets/styles.css) — 745 行
+
+`:root` 设计令牌（--accent `#3b82f6` 等）+ 全部样式，浅色单主题。段落顺序：shell/rail →
+Bento 卡 → 表格卡 → 抽屉 → print → Graph 视图 → opener 离线 modal（`.opener-overlay` 等）
++ `#t-tbl .t-id{cursor:pointer}`。字体由 fonts.css 提供，本文件不含 @font-face。
+
+### [app.js](../src/dashboard_generator/assets/app.js) — 2,489 行
+
+顶层脚本（非模块），段落与行号（改前先 `grep -n "^/\* ----------"` 对准最新行号）：
+
+| 段 | 行 | 职责 |
 |---|---|---|
-| 颜色 | `STATE_COLORS` / `NODE_COLORS` / `MATURITY_COLORS` | dict |
-| 分类 | `OPEN_STATES` / `CLOSED_STATES` | frozenset |
-| KPI | `compute_kpis` | counts + closure_rate + closed + in_progress + avg_links |
-| 分类计数 | `compute_opened_closed_rates` | child_op/change_request 的 total/open/closed/percent |
-| 分布 | `compute_state_distributions` | parent/child/cr 三类的 state 分布 |
-| 分布 | `compute_project_distributions` | 5 类按 project Top-N + Other |
-| 成熟度 | `compute_build_maturity` | CAT 2-5 / Not Applicable 计数 |
-| 时间线 | `compute_delivery_timeline` | deliveries 按 YYYY-MM 聚合 |
-| 时间线 | `compute_build_target_timeline` | builds 按 YYYY-MM 聚合 |
-| 排行 | `compute_owner_rank` | Top 20 owner |
-| 排行 | `compute_team_rank` | team |
-| 矩阵 | `compute_child_op_by_project_state` | 全部项目（37）× 6 state 矩阵，无 Other 归并、无 top_n |
-| 时间 | `compute_ra_op_time` | ra_op_id → created_date 优先，缺失回退 min(target_date in subtree) |
-| 入口 | `compute_all_aggregations` | dict 装上面所有 |
+| payload | 1 | `PAY/DATA/GRAPH/ITEMS/META` 别名（`__PAYLOAD__` 注入）+ **overdue 前端自算 pass** |
+| helpers | 29 | `$` / `fmt`（空值留白、真实 0 显 0）/ `monthFmt` / `escHTML` 等 |
+| scoped aggregation | 38 | `collectScoped()`——五卡按过滤结果集重算（共享实体按 id 去重） |
+| 五张卡 | 57–172 | Totals / Effort / Timeline / Process Area / Team donut 渲染 |
+| table | 173–370 | `COLS`（19 列，`def`=默认可见）/ `cell.*` 渲染器（ID 单元格带 `data-id`）/ 表头排序 |
+| row model | 261 | `normEcr/normWi/normAction`（行扁平化）+ `makeCmp`（嵌套排序 #30） |
+| column filters | 371–837 | Excel 式列筛选（facet 语义、(Blanks) 沉底、树存活） |
+| global search | 838 | ⌘K：`WI_INDEX/ACTION_INDEX/searchEntities/selectResult`（纯预览导航 #25） |
+| detail drawer | 1107 | `DRAWER_INDEX`（含全父引用 #39）/ **`FIELD_LABELS` + `drawerSections` 全字段分组**
+（#9；review Date Ref 按 1899-12-30 epoch 转 ISO；未知列落 More 组）/ 关系行就地导航 / 宽度拖拽 |
+| export to Excel | 1454 | 零依赖 .xlsx（手写 ZIP/CRC32），范围随表格 |
+| Graph view | 1672 | `Graph` 对象：主父挂靠布局（#35）/ 默认全折叠（#34）/ 进度环（#40）/
+维度组卡（#41）/ pan-zoom / 节点抽屉入口 |
+| view switching | 2379 | rail 往返 / print 回退 Home / boot `renderHead(); refresh()` |
+| PTC opener | 2407 | `OPENER_ENDPOINT`(127.0.0.1:8766) / `INTEGRITY_HOST`（**硬编码**，换服务器要改码）/
+`dispatchViaOpener`（1500ms 超时）/ 离线英文 modal / 表格 ID + 抽屉按钮接线（capture 拦截） |
 
-**改这里立刻影响前端**：所有数字 / 颜色 / 矩阵都从这里取。
+### fonts.css — 13 行
 
-### [src/dashboard_generator/html_template.py](../src/dashboard_generator/html_template.py) — 126 行
+内嵌 Inter variable（latin 子集，base64 woff2），单文件自包含的字体来源。
 
-把 `template.html` + `styles.css` + `app.js` + `__PAYLOAD__` 拼成一个完整 HTML 文档。
+## 相关外围
 
-```python
-render_html(payload) → str   # 完整 HTML
-write_html(payload, path)    # 渲染 + 写盘
-```
+| 文件 | 职责 |
+|---|---|
+| [src/dashboard_opener.py](../src/dashboard_opener.py) | opener 服务本体：`GET /health` / `GET /open?url=` → `cmd /c start`（ShellExecute），CORS 头 |
+| [src/opener_only.py](../src/opener_only.py) | 独立 opener 入口（IntegrityOpener.exe） |
+| [src/update_all.py](../src/update_all.py) | 一键链：`fetcher.main()` → 改写 argv 传 `--open` → `generate_dashboard.main()` |
+| [packaging/build.py](../packaging/build.py) | 4 exe（UpdateDatabase / GenerateDashboard / IntegrityOpener / UpdateAll）→ `Release/`；`--smoke` 断言动态对照 `dashboard_manifest.json` + `src/selftest_fetch.py` |
+| [packaging/使用说明.md](../packaging/使用说明.md) | 同事机器使用说明（随 exe 拷贝） |
+| [design/homepage.html](../../design/homepage.html) | 设计原型（**参照，非生产模板**），数据由 `.zcode/mockup_build.py` 注入维护 |
+| `.zcode/mockup_build.py` | 会话工具：读真实 DB → 重组 DATA/GRAPH → 注入设计稿单行（可重复跑） |
 
-占位符：
-- `{{PAGE_META}}` ← `"Read-Across ALM data · generated YYYY-MM-DD HH:MM:SS"`
-- `{{DATE_RANGE}}` ← **dead code**（详见 [known-issues.md §2](known-issues.md#2-html_templatepy-残留死代码)）
+## 改动提醒
 
-## 前端资产
-
-### [src/dashboard_generator/assets/template.html](../src/dashboard_generator/assets/template.html) — 282 行
-
-DOM 骨架。所有 id 必须与 `app.js` 里的 querySelector 一一对应。
-
-**关键 id**：
-- Topbar 全局搜索：`top-search` + 下拉结果面板 `search-panel`（`.search-panel`，TopSearch 渲染）
-- 页头（跨视图共享）：`page-title` + 日期区间 `date-from` / `date-to` / `date-clear`（`.pill-range`）
-- Summary 4 KPI：`m-ra-op` / `m-child-op` / `m-child-cr` / `m-build` + 4 trend pill（`t-ra-op` 等）+ 3 副标（`m-child-sub` / `m-cr-sub` / `m-build-sub`）
-- Target 2 关闭率：`p-child` / `p-cr` + 对应 `pf-*` 进度条
-- Hero chart：`lg-legend-host` / `lg-chart-host`
-- Details 视图（`#view-details`）：`rt-h` / `rt-count` / `rt-expand-all` / `rt-collapse-all` / `rt-status` / `recent-tx-host` / `rt-empty` / `rt-more-wrap`（行带 `data-ra-id` / `data-op-id` / `data-cr-id`，供搜索定位）
-- Projects 视图（`#view-projects`）：`pt-h` / `pt-count` / `pt-search` / `pt-expand-all` / `pt-collapse-all` / `pt-status` / `pt-viewport` / `pt-canvas` / `pt-links` / `pt-zoom-in` / `pt-zoom-out` / `pt-zoom-reset` / `pt-empty`
-- 详情抽屉：`drawer` / `drawer-scrim` / `drawer-kind` / `drawer-close` / `drawer-body`
-- 轻提示：`toast`（TopSearch 定位反馈）
-
-**改这里要小心**：改了 id 要同步改 `app.js` 里的 `$('#xxx')`。
-
-### [src/dashboard_generator/assets/styles.css](../src/dashboard_generator/assets/styles.css) — 1351 行
-
-设计令牌 + 全部样式。**浅色单主题，0 dark 关键字**。
-
-结构：
-1. `:root` 设计令牌（surface / text / brand / shape / spacing / type）
-2. Reset
-3. App shell (`.app` grid)
-4. Sidebar（240px，brand + nav + nav-group）
-5. Main column + Topbar
-6. Content + page-head + pills（含 `.pill-range` 日期区间）
-7. Grid + cards
-8. Summary card（`.summary-grid` 2x2 + `.metric` + trend）
-9. Target card（`.progress-row` + `.progress-fill`）
-10. Hero chart（`.lg-card` + `.lg-legend` + `.legend-pill*` + `.legend-back` + `.bar-seg`）
-11. Page views（`.page-view[hidden]`）
-12. Details card（`.details-head` + `.seg` + `.tx-table` 三层行 + `.row-detail` + `.row-flash` 定位闪烁）
-13. 顶部搜索下拉（`.search-panel` + `.search-group-head` + `.search-row` + `mark`）
-14. 详情抽屉（`.drawer` + `.drawer-scrim` + `.drawer-*`）
-15. Projects 树卡片（`.tree-card` + `.tree-viewport` 点阵画布 + `.tnode` 卡片 + `.tree-links` SVG 连线 + `.tree-zoom` + `.tnode-enter/-leave` 动效）
-16. Toast（`.toast`）
-17. 空态 / `.status-badge` / Responsive guard（1100px 断点）
-
-### [src/dashboard_generator/assets/app.js](../src/dashboard_generator/assets/app.js) — IIFE 包裹，8 个模块挂在 `window`
-
-```js
-const AGG  = () => window.__PAYLOAD__.aggregations;
-const DATA = () => window.__PAYLOAD__.data;
-```
-
-| 模块 | 职责 | 关键方法 |
-|---|---|---|
-| `Summary` | 4 KPI 级联 RA-OP 日期过滤 | `_cascade()` / `_initDateInputs()` / `_renderTrend()` / `render()` |
-| `Target` | 2 关闭率（child_op / change_request） | `render()` |
-| `ProjectStateChart` | Hero chart 2 级钻取（手写 SVG） | `render()`（状态由 `_view` 决定） |
-| `DetailsTable` | Details 页 RA-OP 三层展开表（分页 15/页 + 状态筛选） | `init()` / `_buildChildIndex()` / `_buildCrIndex()` / `_filtered()` / `render()` / `locate()`（搜索定位入口） |
-| `DetailsDrawer` | 右侧详情抽屉（ra / op / cr 三种实体） | `init()` / `_ensureRelations()` / `open()` / `close()` / `_raHtml()` / `_opHtml()` / `_crHtml()` |
-| `ProjectTree` | Projects 页横向三层节点树（筛选/搜索/布局/动效/平移缩放） | `init()` / `_index()` / `_roots()` / `_layout()` / `render()` / `_bindPanZoom()` / `_revealCard()` |
-| `TopSearch` | Topbar 全局搜索（6 类实体下拉面板 + 键盘导航 + Details 定位） | `init()` / `_search()` / `render()` / `_go()` / `_buildChain()`（edges 反查） / `_locateTarget()` / `toast()` |
-| `Pages` | 侧边栏路由（`.page-view` 切换 + 标题更新） | `TITLES` / `init()` / `show()` |
-
-模块顶部定义了 3 个常量集（`CLOSED_STATES` / `ACTIVE_STATES` / `FAILED_STATES`）。**`CLOSED_STATES` 在 boot 时以 `agg.closed_states` 覆盖**（known-issues §1 已修复），默认值仅在聚合缺失时兜底。
-
-`DOMContentLoaded` 时依次调 `Summary/Target/ProjectStateChart/DetailsTable/DetailsDrawer/ProjectTree/TopSearch` 的 init+render、`Pages.init()`，并在 `#date-from` / `#date-to` / `#date-clear` 上挂监听（`refreshAll()` 重渲染 Summary + DetailsTable + ProjectTree；`clearDateFilter()` 供定位时清空日期共用）。
-
-## 杂项
-
-- `tests/mock_dom_test.js`：Node 模拟 DOM 单测（workflow.md §3），`node tests/mock_dom_test.js` 运行，覆盖 render 模块回归 + TopSearch 全部交互路径
-- `.gitignore`：包含 `dashboard.html`、`__pycache__/`、`*.pyc`、输出 tmp、编辑器临时文件。注意 `dashboard.html` 虽在 .gitignore 里但**已被 git 跟踪**（ignore 对已跟踪文件无效），每次重新生成后应随代码一起提交
-- `Plan/`：早期规划文档，**部分已 superseded**（00_overview.md 顶部有提示）
-- `Reference/`：设计参考图（Jajanken Ltd.）
+- 改 template.html 的 id 要同步 app.js 的 `$()`；改 app.js 后跑
+  `node --check src/dashboard_generator/assets/app.js`
+- 改 data_loader / aggregations 后：重新生成 HTML + payload 等价对比（workflow.md §4 不变项 4）
+  + `packaging/build.py --smoke`
+- 换 PTC 服务器地址：改 app.js 的 `INTEGRITY_HOST` 与使用说明.md 的 hostname 描述

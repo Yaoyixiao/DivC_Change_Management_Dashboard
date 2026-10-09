@@ -1,11 +1,23 @@
 # Data Contract
 
-> **⚠️ 过时声明（2026-10-07）**：本文的顶层信封形状 `{meta, data, aggregations}` 仍沿用
-> （dashboard-content.md §9），但其中全部实体表（ra_ops/parent_ops/…）、边与 aggregation 字段
-> 均为旧 RA-OP 口径，与当前 ECR 层级库（items/edges）不符。新契约以
-> [dashboard-content.md](dashboard-content.md) §3/§9 为准，适配时更新本文。
+> **⚠️ 过时声明（2026-10-09 更新）**：本文正文描述旧 RA-OP 口径的实体表/边/聚合字段，仅作
+> 历史参照。**现行契约**以 [src/dashboard_generator/data_loader.py](../src/dashboard_generator/data_loader.py)
+> 模块 docstring 为准（2026-10-09 适配落地）：
+>
+> ```js
+> window.__PAYLOAD__ = {
+>   data:  { ecrs, builds, items },   // ecrs=嵌套树(#27 effort 双字段), builds=抽屉用,
+>                                     // items=id→全字段原始行(抽屉全字段, 剔除 overdue_*)
+>   graph: { nodes, edges: {work_items, actions, work_item_for}, generatedAt },
+>   aggregations: { counts, plannedTotal, actualTotal, byProcessArea, byTeam,
+>                   open_states, closed_states },   // 五卡无过滤基线(#14 含 ALM_Completed)
+>   meta:  { generated_at, ... },     // metadata 表全部键值; overdue 由前端按 generated_at 自算
+> }
+> ```
+>
+> 字段语义与口径的权威描述见 [dashboard-content.md](dashboard-content.md) §3/§4/§7。
 
-`window.__PAYLOAD__` 的完整结构，由 Python 端 `load_payload` + `compute_all_aggregations` 拼装，浏览器侧 `app.js` 消费。
+`window.__PAYLOAD__` 的完整结构，由 Python 端 `load_payload` + `compute_all_aggregations` 拼装，浏览器侧 `app.js` 消费。（以下正文为旧 RA-OP 版本。）
 
 ## 顶层结构
 

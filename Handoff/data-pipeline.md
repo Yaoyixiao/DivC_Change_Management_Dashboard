@@ -240,9 +240,10 @@ python src/selftest_fetch.py
 
 ## 8. 已知限制与注意点
 
-1. **dashboard 链路尚未适配**：`dashboard_generator/` 与 `generate_dashboard.py` 仍按旧 RA-OP
-   schema（ra_op/child_op 等表）读库，对新 `dashboard.db` 会直接报错——**预期行为**，属下一阶段
-   （phase 2）工作。`update_all.py` 的 dashboard 步骤因此暂时失败（fetch 步骤正常）。
+1. ~~**dashboard 链路尚未适配**~~（已于 2026-10-09 完成）：`dashboard_generator/` 与
+   `generate_dashboard.py` 已重写为直接消费本文 §5 的 items/edges/metadata 三表（payload 信封
+   `{data: {ecrs, builds, items}, graph, aggregations, meta}`），`update_all.py` 全链路可用。
+   data_loader 侧带必需列校验，指向旧库/错库会报明确的英文错误。
 2. **字段有效性耦合**：一次 `im exportissues` 对所有 item 类型请求同一份 42 字段清单；
    新增字段必须对 ecr/work_item/action/build 四类都合法，否则整个导出报错
    （`cli_client` 的 RuntimeError 会带出 im 的 stdout/stderr）。届时再按 kind 拆分字段清单（见 §9）。
@@ -253,8 +254,8 @@ python src/selftest_fetch.py
    真实导出固定 `.xls`（xlrd 读），不要顺手改成 `.xlsx` 除非确认 im 支持。
 6. **Windows 控制台**：源码运行日志为中文（GBK 控制台可显示）；打包 exe 场景沿用
    `exe_utils.make_streams_tolerant()` 兜底，CLI 输出避免非常用 Unicode 符号。
-7. **打包**：`BASE_DIR`/`ECR_CONFIG_PATH` 已 frozen 感知（exe 目录为基准），但本仓库尚未迁移
-   旧项目的 `packaging/build.py`，PyInstaller 打包是待办而非现状。
+7. **打包**：`BASE_DIR`/`ECR_CONFIG_PATH` 已 frozen 感知（exe 目录为基准）；PyInstaller 打包见
+   `packaging/build.py`（4 exe → `Release/`，`--smoke` 两层自检），已常态化。
 
 ## 9. 扩展点
 
@@ -268,12 +269,13 @@ python src/selftest_fetch.py
 | 按 kind 拆分字段清单 | `ecr_config` 扩展配置结构 + `fetcher` 每类实体用各自字段表 | 仅当 PTC 拒绝跨类型字段时才需要 |
 | 加新的导出清洗规则 | `data_utils` 加纯函数 + `fetcher._clean_rows` 接线 + `selftest_fetch` 加假数据断言 | 清洗统一在 normalize/去重之后、写四件套之前执行（现规则见 §5.5） |
 | 加新的派生数据段（如从 Summary 抽取） | `data_utils` 加纯函数 + `config` 加 `ALIAS_*` 常量 + 三个 writer 加固定列 + `fetcher` 加 `_tag_*` 接线 + `selftest_fetch` 加断言 | 参考 Process Area 的实现（§5.5）；schema 变更后旧 dashboard.db 需重跑取数才会带上新列 |
-| phase 2：dashboard 适配 | 重写 `dashboard_generator/data_loader.py`（items/edges → 旧 payload 形状或新形状）+ `aggregations.py` 口径 + `template/app.js` | 旧聚合里的 `OPEN_STATES/CLOSED_STATES`、三色映射、`ra_op_time` 思路可复用；`__PAYLOAD__` 契约（data/aggregations/meta）建议保留 |
+| ~~phase 2：dashboard 适配~~（已完成 2026-10-09） | `data_loader` 读 items/edges/metadata → `{data: {ecrs, builds, items}, graph, aggregations, meta}`；聚合含 `ALM_Completed` 的 CLOSED 集；前端为原型移植（详见 [file-map.md](file-map.md) 与 [workflow.md](workflow.md) §4） | 换字段/换口径时的前端落点：`data_loader.display_effort`（effort 展示规则）、`aggregations.compute_*`（卡片基线）、`assets/app.js`（overdue 前端自算与 drawer 字段分组） |
 
 ## 10. 与其他 Handoff 文档的关系
 
 | 文档 | 状态 |
 |---|---|
 | 本文（data-pipeline.md） | ✅ 取数链路的唯一权威描述 |
-| architecture.md / file-map.md / data-contract.md / ui-components.md / workflow.md / known-issues.md / extension-points.md | 描述 **dashboard 渲染链路**（基于旧 RA-OP 数据）。其中涉及"数据来源/dashboard.db schema"的内容已因本次改造**过时**；dashboard 侧的 UI 设计、模块划分、测试思路在 phase 2 仍有参考价值，但 schema/payload 契约必须以本文 §5 为准重新设计 |
+| dashboard-content.md / workflow.md / file-map.md / known-issues.md | ✅ 已按新渲染链路更新（2026-10-09）：内容口径 / 命令与验证 / 文件职责 / 已知问题 |
+| architecture.md / ui-components.md / data-contract.md / extension-points.md | 描述旧 RA-OP 看板，横幅已标注；模块思路可参考，schema/payload 一律以本文 §5 与 `data_loader.py` 为准 |
 | `Requirement/Change_Request.md` | 本次改造的需求原文（层级结构与配置 sheet 的出处） |

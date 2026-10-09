@@ -3,12 +3,12 @@
 > 单文件自包含 HTML dashboard，把 `src/output/dashboard.db`（PTC Integrity / Windchill RV&S
 > 按 ECR 层级导出：ECR → Work Item 三级 / Action / Build）转成可视化检索工作台 + 关系图谱。
 
-> **⚠️ 状态更新（2026-10-07）**：phase 1 取数链路已完成并用真实 PTC 客户端验证（权威文档
-> [data-pipeline.md](data-pipeline.md)）。phase 2 dashboard **内容 spec 已锁定、视觉设计稿已完成、
-> opener 与打包已交付，但 `src/dashboard_generator/` 渲染本体尚未适配新库**（对新库必报错
-> `no such table: ra_op`，属预期）。内容唯一权威：[dashboard-content.md](dashboard-content.md)；
-> 视觉/交互参照：[design/homepage.html](../design/homepage.html)。旧 RA-OP 看板文档已加横幅，
-> 仅作模块与交互思路参考。
+> **状态更新（2026-10-09）**：phase 1 取数链路已完成并用真实 PTC 客户端验证（权威文档
+> [data-pipeline.md](data-pipeline.md)）。phase 2 渲染链路**已适配落地并合入 main**——
+> `src/dashboard_generator/` 重写为新库三表 + 原型移植版前端，4 exe 打包冒烟全过（含
+> `Release/` 二进制入库）。内容唯一权威：[dashboard-content.md](dashboard-content.md)；
+> 命令/打包/验证：[workflow.md](workflow.md)；文件职责地图：[file-map.md](file-map.md)。
+> 旧 RA-OP 看板文档已加横幅，仅作模块与交互思路参考。
 
 ## 1. 一句话命令
 
@@ -47,9 +47,9 @@ python packaging/build.py --smoke         # 打包 4 exe 到 Release/ + 冒烟�
 | [workflow.md](workflow.md) | 命令 / 打包 / opener / 验证流程（含新看板 Home/Graph 手测清单） | ✅ 权威 |
 | [architecture.md](architecture.md) | 旧看板数据流 / 模块依赖 / 设计决策 | ⚠️ RA-OP 遗留 |
 | [ui-components.md](ui-components.md) | 旧看板三视图 + 抽屉的语义、数据源、交互 | ⚠️ RA-OP 遗留 |
-| [data-contract.md](data-contract.md) | `__PAYLOAD__` 结构（信封形状 `{data, aggregations, meta}` 仍沿用，实体字段是旧口径） | ⚠️ RA-OP 遗留 |
-| [file-map.md](file-map.md) | 旧看板每文件职责 + 函数清单 | ⚠️ RA-OP 遗留 |
-| [known-issues.md](known-issues.md) | 旧看板已知 bug / 口径差异 | ⚠️ RA-OP 遗留 |
+| [data-contract.md](data-contract.md) | payload 契约（横幅带现行信封形状速览；正文为旧 RA-OP 历史参照，现行契约以 data_loader.py 为准） | ⚠️ 历史参照 |
+| [file-map.md](file-map.md) | 渲染链路每文件职责 + app.js 段落地图 | ✅ 已重写（2026-10-09） |
+| [known-issues.md](known-issues.md) | 现行已知问题 + 旧条目核销记录 | ✅ 已重写（2026-10-09） |
 | [extension-points.md](extension-points.md) | 旧看板扩展手法 | ⚠️ RA-OP 遗留 |
 
 ## 4. 设计一句话

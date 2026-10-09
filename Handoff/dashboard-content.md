@@ -253,18 +253,31 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 - 分页
 - UI 视觉（主题 / 布局 / 字体排印）——**下个会话基于 `Reference/Relate_DESIGN.md` 单独做**
 
-## 9. 实现备忘（后续会话）
+## 9. 实现备忘（已全部落地，2026-10-09 于 `render-pipeline` 分支并已合入 main）
 
-- **首页屏视觉设计稿已完成**：`design/homepage.html`（单文件自包含、内嵌 Inter、内嵌 2026-10-01 真实快照数据；含 Bento 五卡 + 表格交互原型，可作 phase 2 渲染实现的直接参照）。
-- `data_loader` 重写：`items` / `edges` / `metadata` → `__PAYLOAD__ {data, aggregations, meta}`（契约形状沿用旧版，见 [data-contract.md](data-contract.md)）；建议直接消费 `dashboard_schema.json` 校验列。
-- Home 五卡是**结果集作用域**聚合（§3.1）：渲染层需支持按过滤结果前端重算（共享实体去重）；payload 里的全量聚合仅作无过滤基线与自检对照。设计稿 `design/homepage.html` 的 `collectScoped()` 可直接参照。
-- ⌘K 搜索需要**扁平实体索引**（WI/Action 按实体去重 + 各自映射父 ECR id），设计稿 `design/homepage.html` 的 `WI_INDEX / ACTION_INDEX` 与 `searchEntities()` 可直接参照；选中定位需要表格行与展开区子项可寻址（`data-id` / `data-kind`）。
-- 需新写的聚合：kind 计数（Totals 卡，实体去重）、rollup effort 汇总、ECR 创建故事线、process_area 分布、team 分布、children 计数、OPEN/CLOSED 分类（含 `ALM_Completed`）。
-- **Planned Effort 展示口径在渲染层解析**（设计稿 `design/homepage.html` + `.zcode/mockup_build.py` 可直接参照）：payload 里 `planned` 保留**自身原值**（卡片/范围聚合用），`effort` 为按 §4 逐行口径解析后的**展示值**（CR 型 → rollup；其余 → 自身值，空则回退 rollup）；表格列读 `effort`，卡片聚合读 `planned`，两字段勿混用。
-- **Graph 原型数据**：现 DATA 仅 Home 形状（`{ecrs, agg}`，ECR 内嵌 children/actions），缺 Build
-  与共享多父边信息——mockup_build.py 需扩展注入图结构（flat nodes + 三类 edges），Home 消费不变。
-- 硬约束不变：单文件自包含 HTML、零前端依赖、手写 SVG、内嵌 Inter、浅色主题、CLI 输出 ASCII-only、4 exe 打包（见 [workflow.md](workflow.md)）。
-- 验证：渲染链路适配后按 [workflow.md §4](workflow.md) 浏览器手测 + `node --check` + inline self-check；取数链路无改动，`selftest_fetch.py` 不受影响。
+以下为适配前的实现备忘，保留作决策留痕；各项均已实现，现状代码以
+[src/dashboard_generator/](../src/dashboard_generator/) 为准：
+
+- **首页屏视觉设计稿已完成**：`design/homepage.html`（单文件自包含、内嵌 Inter、内嵌 2026-10-01
+  真实快照数据；含 Bento 五卡 + 表格交互原型）——已作为模板移植源，现退为视觉参照。
+- `data_loader` 重写 ✅：`items` / `edges` / `metadata` → `__PAYLOAD__ {data: {ecrs, builds, items},
+  graph, aggregations, meta}`（信封在旧版三键基础上增设 `graph`、`data.items` 全字段映射）；
+  必需列校验直接对 items 表实测，不依赖 schema JSON 文件。
+- Home 五卡**结果集作用域**聚合 ✅：前端按过滤结果重算（`collectScoped` 随原型移植）；
+  payload `aggregations` 作无过滤基线与自检对照（workflow.md §4 不变项 3）。
+- ⌘K 扁平实体索引 ✅：`WI_INDEX / ACTION_INDEX / searchEntities()` 随原型移植；
+  行寻址 `data-id` / `data-kind`（detail 按钮与行上）。
+- 聚合 ✅：kind 计数（实体去重）、rollup effort 汇总、process_area / team 分布、
+  OPEN/CLOSED 分类（CLOSED 含 `ALM_Completed`）；创建故事线由前端从 ECR 列表直绘，
+  children 计数在 data_loader 树遍历里完成。
+- **Planned Effort 展示口径在渲染层解析** ✅：`planned`（自身原值）与 `effort`（展示值）
+  双字段按本节口径由 `data_loader.display_effort` 产出。
+- **Graph 数据** ✅：`graph` 段 = flat nodes（含 `effort` / `teamDist` / `paDist` / `level`）
+  + 三类 edges；Home 消费 `data.ecrs` 不变。
+- 硬约束保持 ✅：单文件自包含 HTML、零前端依赖、手写 SVG、内嵌 Inter、浅色主题、
+  CLI 输出 ASCII-only、4 exe 打包（见 [workflow.md](workflow.md)）。
+- 验证 ✅：payload 与设计稿 DATA/GRAPH 逐值等价 + `node --check` + 自包含正则 +
+  浏览器自动化冒烟 + `packaging/build.py --smoke`（workflow.md §4）。
 
 ## 10. 决策记录（访谈留痕，防反复）
 
