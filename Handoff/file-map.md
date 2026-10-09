@@ -79,7 +79,8 @@ body 标记（head 由 html_template 组装）。**所有 id 必须与 app.js �
 - Bento 五卡：`bento-scope`（范围提示）/ `card-totals` + `kpi-row` / `effort-kpis` /
   `timeline` / `pa-list` / `donut` + `team-legend`
 - 表格卡：`seg`（状态分段）/ `t-filter` / `t-clear` / `t-export` / `t-cols-btn` /
-  `t-cols-pop` / `t-tbl`（`t-thead`/`t-tbody`）/ `col-pop`（列筛选单例弹层）/
+  `t-cols-pop` / `t-tbl`（`t-thead`/`t-tbody`，表头首格含**展开收起钮 `t-expand-all`**，由
+  app.js 渲染注入）/ `col-pop`（列筛选单例弹层）/
   `t-foot-count` / `t-sum-p` / `t-sum-a`
 - Graph 视图：`g-viewport` > `g-canvas` + `g-links`（SVG）；浮动件 `g-seg` / `g-filter` /
   `g-expand` / `g-collapse` / `g-caption` / `g-zoom-in` / `g-zoom-out` / `g-zoom-reset`
@@ -87,13 +88,14 @@ body 标记（head 由 html_template 组装）。**所有 id 必须与 app.js �
   `drawer-close` / `drawer-idrow` / `drawer-title` / `drawer-body` / **`drawer-open-ptc`**——
   opener 接线钩子）
 
-### [styles.css](../src/dashboard_generator/assets/styles.css) — 745 行
+### [styles.css](../src/dashboard_generator/assets/styles.css) — 763 行
 
 `:root` 设计令牌（--accent `#3b82f6` 等）+ 全部样式，浅色单主题。段落顺序：shell/rail →
 Bento 卡 → 表格卡 → 抽屉 → print → Graph 视图 → opener 离线 modal（`.opener-overlay` 等）
-+ `#t-tbl .t-id{cursor:pointer}`。字体由 fonts.css 提供，本文件不含 @font-face。
++ `#t-tbl .t-id{cursor:pointer}` → **行 morph 的 VT root 抑制 + 表头拖拽指示线 +
+`t-expand-all` 钮**。字体由 fonts.css 提供，本文件不含 @font-face。
 
-### [app.js](../src/dashboard_generator/assets/app.js) — 2,489 行
+### [app.js](../src/dashboard_generator/assets/app.js) — 2,663 行
 
 顶层脚本（非模块），段落与行号（改前先 `grep -n "^/\* ----------"` 对准最新行号）：
 
@@ -103,17 +105,24 @@ Bento 卡 → 表格卡 → 抽屉 → print → Graph 视图 → opener 离线 
 | helpers | 29 | `$` / `fmt`（空值留白、真实 0 显 0）/ `monthFmt` / `escHTML` 等 |
 | scoped aggregation | 38 | `collectScoped()`——五卡按过滤结果集重算（共享实体按 id 去重） |
 | 五张卡 | 57–172 | Totals / Effort / Timeline / Process Area / Team donut 渲染 |
-| table | 173–370 | `COLS`（19 列，`def`=默认可见）/ `cell.*` 渲染器（ID 单元格带 `data-id`）/ 表头排序 |
-| row model | 261 | `normEcr/normWi/normAction`（行扁平化）+ `makeCmp`（嵌套排序 #30） |
-| column filters | 371–837 | Excel 式列筛选（facet 语义、(Blanks) 沉底、树存活） |
-| global search | 838 | ⌘K：`WI_INDEX/ACTION_INDEX/searchEntities/selectResult`（纯预览导航 #25） |
-| detail drawer | 1107 | `DRAWER_INDEX`（含全父引用 #39）/ **`FIELD_LABELS` + `drawerSections` 全字段分组**
+| table | 173–370 | `COLS`（19 列，`def`=默认可见）/ **`colOrder` + `orderedCols()`（列拖拽序，chev 恒首
+  detail 恒末）** / `cell.*` 渲染器（ID 单元格带 `data-id`）/ `morphRender()`（排序/展开动效：
+  View Transitions + FLIP 降级 + 节流渲染 120ms 兜底）/ `allExpandableIds` /
+  `syncExpandAll`（表头展开收起钮 #44）/ `renderHead`（含 DnD `bindHeadDrag` +
+  `reorderColumn` #43）/ 表头排序点击走 morph（#42） |
+| row model | 271 | `normEcr/normWi/normAction`（行扁平化）+ `makeCmp`（嵌套排序 #30）+
+  `flattenRows` 附加稳定 `rowKey`（根→自身 id 链，morph 跟踪用） |
+| column filters | 381–808 | Excel 式列筛选（facet 语义、(Blanks) 沉底、树存活）；`buildColsMenu()`
+  按当前列序重建 |
+| column filter dropdown | 809 | 单例弹层（值搜索 / 三态全选 / 重锚定） |
+| global search | 1012 | ⌘K：`WI_INDEX/ACTION_INDEX/searchEntities/selectResult`（纯预览导航 #25） |
+| detail drawer | 1281 | `DRAWER_INDEX`（含全父引用 #39）/ **`FIELD_LABELS` + `drawerSections` 全字段分组**
 （#9；review Date Ref 按 1899-12-30 epoch 转 ISO；未知列落 More 组）/ 关系行就地导航 / 宽度拖拽 |
-| export to Excel | 1454 | 零依赖 .xlsx（手写 ZIP/CRC32），范围随表格 |
-| Graph view | 1672 | `Graph` 对象：主父挂靠布局（#35）/ 默认全折叠（#34）/ 进度环（#40）/
+| export to Excel | 1628 | 零依赖 .xlsx（手写 ZIP/CRC32），范围随表格，列序跟随 `orderedCols()` |
+| Graph view | 1846 | `Graph` 对象：主父挂靠布局（#35）/ 默认全折叠（#34）/ 进度环（#40）/
 维度组卡（#41）/ pan-zoom / 节点抽屉入口 |
-| view switching | 2379 | rail 往返 / print 回退 Home / boot `renderHead(); refresh()` |
-| PTC opener | 2407 | `OPENER_ENDPOINT`(127.0.0.1:8766) / `INTEGRITY_HOST`（**硬编码**，换服务器要改码）/
+| view switching | 2553 | rail 往返 / print 回退 Home / boot `renderHead(); refresh()` |
+| PTC opener | 2581 | `OPENER_ENDPOINT`(127.0.0.1:8766) / `INTEGRITY_HOST`（**硬编码**，换服务器要改码）/
 `dispatchViaOpener`（1500ms 超时）/ 离线英文 modal / 表格 ID + 抽屉按钮接线（capture 拦截） |
 
 ### fonts.css — 13 行

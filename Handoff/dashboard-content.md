@@ -166,6 +166,9 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 - **可展开行** = ECR、有下级的 WI（显示 chevron）；叶子 WI 与 Action 行无 chevron。
 - **行点击 = 展开/收起**（仅可展开行）；叶子行点击无动作。**行点击与抽屉解耦**（2026-10-06）：详情按钮后续单独实现，在此之前 Home 表格无抽屉入口（⌘K 选中按 #25 只定位展开，不进抽屉）。
 - **展开态 keyed 持久**：跨排序 / 过滤 / 重渲染保持（旧版 keyed 展开 state 模式）。
+- **表头全部展开/收起钮（2026-10-09，#44）**：chevron 表头单元格里一个切换按钮，双箭头图标随"下一个动作"切换（Expand all rows / Collapse all rows）；语义对齐 Graph——作用于当前过滤可见集（列筛选激活时以 keep 集为界）；Collapse all 清手动+抑制集，文本过滤的命中链 overlay 按 #29 保留；无可展开行时禁用。
+- **排序/展开动效（2026-10-09，#42）**：排序点击、行展开/收起、全部展开/收起时行平滑位移到新位置（View Transitions，FLIP translateY 降级，参照 [Reference/Sort Morph_CSS.txt](../Reference/Sort Morph_CSS.txt)）；`prefers-reduced-motion` 直接跳过；行 key = 根→自身 id 链（共享 WI 在不同父链下各自唯一）。
+- **列拖拽排序（2026-10-09，#43）**：数据列表头可拖拽重排（HTML5 DnD，accent 竖线指示插入侧）；chevron 恒首位、detail 恒末位，拖到钉死列上钳制到首/末数据位；会话内存不持久化；Columns 菜单 / 表体 / edge 尾列 / Excel 导出全部跟随新序。
 - **Build 不进表格**（只在抽屉与图谱出现）。
 
 ---
@@ -324,3 +327,6 @@ Overdue（**前端自算**：`planned_completion_date < generated_at` 且 `state
 | 39 | **Graph 节点点击开抽屉**（2026-10-08 grill 轮，覆盖 #37 的"无动作"）：卡片正文 = 开抽屉（± 钮仍展开），选中高亮转为**抽屉锚点环**（随抽屉开关与关系导航跟随/清除）；**Build 抽屉变体** = Core（含 Maturity）/Dates/Relations、无 Effort 段，`DATA.builds` 注入全字段；**多父实体 Relations 全父显示**（3 共享 WI + 共享 Build，新者在前 + shared 芯片）；**关系行随视图就近导航**（Graph 内展开主父链+定位闪烁+抽屉原地切换，Home 表格同步行为不变）；⌘K 的 Build 组仍按 #25 另议，本轮不做 |
 | 40 | **Graph 卡片右上角迷你进度环**（2026-10-08 grill 轮，取代原创建月份；同日用户修正：**ECR 根卡不画环改显 rollup 总量数字**）：子卡 display effort（#27 口径）占当前挂靠 ECR rollup 总量的百分比；**分母随挂靠父变**（非固定主 ECR，过滤改挂后百分比即变）；缺 effort **留白不渲染**（Build 全部/Action 大部分/26% WI，不与真实 0 混淆——真实 0 画空环）；环内数字 10–99 显整数、<10 无数字；tooltip 显精确值；GRAPH 节点新增 `effort` 字段 |
 | 41 | **ECR 维度展开 = 分组子卡**（2026-10-08 grill 轮，用户澄清"以子卡形式展开"）：ECR 卡内 Team / Process Area chips 切换展开模式，**三模式互斥**（结构默认；结构展开态保留可恢复；维度激活时结构钮隐藏）；分组为**同尺寸中性子卡**（组名/effort 数/占比条/WI 计数，effort 降序 + Other 沉底），**组卡可再展开组内 WI 实体卡**（被 claim 成员画虚线跨边）；口径 = #12（子树 WI 自身值、Action/Build 不混、零值成员计入组员数、缺失归 Other、分母=参与和非 rollup）；组内 WI 环分母仍 ECR rollup；组卡不受状态分段裁剪、搜索命中组名强制展开；组卡 body 点击=展开无抽屉；ECR 图节点注入 `teamDist`/`paDist`（name/value/count/members） |
+| 42 | **表格排序/展开动效**（2026-10-09 用户需求）：排序点击、行展开/收起、全部展开/收起时**存活行平滑位移**（View Transitions API，无支持时 FLIP translateY 降级；参照 Reference/Sort Morph_CSS.txt；420ms cubic-bezier(.22,.61,.36,1)）；抑制 root crossfade 只动具名行；`prefers-reduced-motion` 跳过；行 key = 根→自身 id 链，共享 WI 不同父链各自唯一；节流渲染兜底：VT 回调 120ms 未执行则同步渲染 |
+| 43 | **表格列拖拽重排**（2026-10-09 用户需求）：数据列表头 HTML5 DnD 拖拽（accent 插入指示线）；**chev 恒首、detail 恒末**（钉死列钳制到首/末数据位）；会话内存不持久化；Columns 菜单 / 表体 / edge 尾列 / Excel 导出 / 列筛选全跟随新序；键盘可达性暂缺（后续可在 Columns 菜单补左右移按钮） |
+| 44 | **表头全部展开/收起钮**（2026-10-09 用户需求，放 chevron 表头单元格）：单按钮随下一个动作切换图标与文案；语义对齐 Graph 作用于当前过滤可见集（列筛选以 keep 集为界）；Collapse 清手动+抑制集，#29 命中链 overlay 保留；无可展开行禁用 |

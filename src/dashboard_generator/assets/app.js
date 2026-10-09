@@ -204,6 +204,16 @@ const state = {
   filters: new Map(),    // column key -> Set of selected display values ("" = blanks); Excel-style
 };
 
+/* column order: session-scoped, data columns only — the chevron affordance
+   stays first and the detail button last; header drag-reordering moves the
+   rest (renderers below all read orderedCols(), never COLS directly) */
+let colOrder = COLS.map((c) => c.key);
+const orderedCols = () => {
+  const byKey = Object.fromEntries(COLS.map((c) => [c.key, c]));
+  const data = colOrder.filter((k) => k !== "chev" && k !== "detail" && byKey[k]);
+  return [byKey.chev, ...data.map((k) => byKey[k]), byKey.detail];
+};
+
 /* entity-type monogram shown before the ID (mini rhyme of the brand mark).
    Cool hues only — warm orange/green stay reserved for state badges. */
 const TYPE_META = {
@@ -461,6 +471,9 @@ function flattenRows(ecrRows, expandSet, keep) {
     kids.forEach((k, i) => {
       k.isLast = i === kids.length - 1;
       k.lastChain = [...parent.lastChain, k.isLast];
+      // stable sort-morph key: the root->self id chain (a shared WI under
+      // two ECRs gets two distinct keys, so every visible row is unique)
+      k.rowKey = `${parent.rowKey}-${k.id}`;
     });
     for (const k of kids) {
       rows.push(k);
@@ -470,6 +483,7 @@ function flattenRows(ecrRows, expandSet, keep) {
   for (const e of [...ecrRows].map((x) => normEcr(x, 0)).sort(cmp)) {
     if (keep && !keep.has(e.id)) continue;
     e.lastChain = [];
+    e.rowKey = `trow-${e.id}`;
     rows.push(e);
     if (expandSet.has(e.id)) walkKids(e);
   }
@@ -480,7 +494,7 @@ function flattenRows(ecrRows, expandSet, keep) {
 const GUIDE_PITCH = 23; // 11px gap + 1px line + 11px gap, per the tree reference
 
 function trHTML(r, isOpen, isHit) {
-  const cells = COLS.map((c) => {
+  const cells = orderedCols().map((c) => {
     const cls = c.cls ? ` class="${c.cls}"` : "";
     // hierarchy guides live in the ID column only
     const guides = c.key === "id" && r.depth ? idGuides(r) : "";
@@ -488,7 +502,8 @@ function trHTML(r, isOpen, isHit) {
   }).join("");
   const cls = `row ${r.kind}${r.expandable ? " expandable" : ""}${isOpen ? " is-open" : ""}${isHit ? " hit" : ""}`;
   const aria = r.expandable ? ` aria-expanded="${isOpen}"` : "";
-  return `<tr class="${cls}" data-id="${r.id}"${aria}>${cells}</tr>`;
+  // the inline view-transition-name lets the sort morph track this exact row
+  return `<tr class="${cls}" data-id="${r.id}" data-row-key="${r.rowKey}"${aria} style="view-transition-name:${r.rowKey}">${cells}</tr>`;
 }
 
 /* guide lines per Reference/Table_structure_UI_CSS.txt with classic tree
@@ -511,23 +526,95 @@ function idGuides(r) {
 }
 
 const FUNNEL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M22 3 2 3l8 9.46V19l4 2v-8.54L22 3z"/></svg>`;
+const EXPAND_ALL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 5 5 5 5-5"/><path d="m7 13 5 5 5-5"/></svg>`;
+const COLLAPSE_ALL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 11 5-5 5 5"/><path d="m7 19 5-5 5 5"/></svg>`;
+
+/* row morph for sorts and expansion changes (Reference/Sort Morph_CSS.txt):
+   View Transitions where available, FLIP translateY fallback otherwise;
+   rows entering/leaving just appear/disappear, surviving rows glide.
+   Reduced-motion users get the plain synchronous re-render. */
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
+function morphRender(fn) {
+  if (REDUCED_MOTION.matches) { fn(); return; }
+  if (!document.startViewTransition) {
+    // FLIP fallback (no View Transitions): measure, re-render, glide each
+    // surviving row from its old position (Reference/Sort Morph_CSS.txt)
+    const before = new Map();
+    document.querySelectorAll("#t-tbody tr.row").forEach((tr) =>
+      before.set(tr.dataset.rowKey, tr.getBoundingClientRect().top));
+    fn();
+    document.querySelectorAll("#t-tbody tr.row").forEach((tr) => {
+      const y0 = before.get(tr.dataset.rowKey);
+      if (y0 === undefined) return;
+      const dy = y0 - tr.getBoundingClientRect().top;
+      if (dy) tr.animate(
+        [{ transform: `translateY(${dy}px)` }, { transform: "none" }],
+        { duration: 420, easing: "cubic-bezier(.22,.61,.36,1)" });
+    });
+    return;
+  }
+  let ran = false;
+  const t = document.startViewTransition(() => { ran = true; fn(); });
+  // safety net: a throttled renderer (background pane) never fires the VT
+  // callback; apply the (idempotent) render synchronously instead and let a
+  // late callback just re-render the same state
+  setTimeout(() => {
+    if (!ran) { fn(); try { t.skipTransition(); } catch { /* already done */ } }
+  }, 120);
+}
+
+/* ids of every expandable row in the current filtered scope — when column
+   filters are active the keep set bounds the walk (graph parity: the control
+   acts on what is visible) */
+function allExpandableIds(ecrRows, keep) {
+  const ids = new Set();
+  const walk = (n) => {
+    if (keep && !keep.has(n.id)) return;
+    if (n.expandable) ids.add(n.id);
+    n.kids.forEach(walk);
+  };
+  ecrRows.forEach((e) => walk(normEcr(e, 0)));
+  return ids;
+}
+
+/* the chevron header cell hosts the expand/collapse-all toggle; its icon and
+   labels always present the NEXT action over the visible scope */
+function syncExpandAll(ecrRows, expansion, keep) {
+  const btn = $("t-expand-all");
+  if (!btn) return;
+  const ids = allExpandableIds(ecrRows, keep);
+  const expandNext = ids.size > 0 && [...ids].some((id) => !expansion.has(id));
+  btn.disabled = ids.size === 0;
+  btn.innerHTML = expandNext ? EXPAND_ALL_SVG : COLLAPSE_ALL_SVG;
+  const label = expandNext ? "Expand all rows" : "Collapse all rows";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  btn.dataset.next = expandNext ? "expand" : "collapse";
+}
 
 function renderHead() {
-  $("t-thead").innerHTML = COLS.map((c) => {
+  $("t-thead").innerHTML = orderedCols().map((c) => {
     const cls = [c.sort && "sortable", c.cls].filter(Boolean).join(" ");
     const attrs = `${cls ? ` class="${cls}"` : ""}${c.sort ? ` data-key="${c.key}" role="columnheader"` : ""}${state.sortKey === c.key ? ` aria-sort="${state.sortDir}"` : ""} data-col="${c.key}"`;
+    if (c.key === "chev") {
+      // expand/collapse-all lives in the chevron affordance cell (54px)
+      return `<th${attrs}><button type="button" class="t-expand-all" id="t-expand-all" aria-label="Expand all rows" title="Expand all rows">${EXPAND_ALL_SVG}</button></th>`;
+    }
     // every data column carries a filter trigger; the chevron affordance column does not
     const fbtn = colVal[c.key]
       ? `<button type="button" class="col-fbtn${state.filters.has(c.key) ? " is-active" : ""}" data-fkey="${c.key}" aria-haspopup="true" aria-expanded="false" title="Filter ${escHTML(c.label || "column")}">${FUNNEL_SVG}</button>`
       : "";
-    return `<th${attrs}>${c.label}${fbtn}</th>`;
+    // data columns are drag-reorderable; the trailing detail affordance stays pinned
+    const drag = c.key === "detail" ? "" : ` draggable="true"`;
+    return `<th${attrs}${drag}>${c.label}${fbtn}</th>`;
   }).join("");
   $("t-thead").querySelectorAll("th.sortable").forEach((th) => {
     th.addEventListener("click", () => {
       const k = th.dataset.key;
       state.sortDir = state.sortKey === k && state.sortDir === "descending" ? "ascending" : "descending";
       state.sortKey = k;
-      renderHead(); renderBody(filteredRows()); // sorting reshapes the table only
+      // sorting reshapes the table only — rows morph to their new positions
+      morphRender(() => { renderHead(); renderBody(filteredRows()); });
     });
   });
   $("t-thead").querySelectorAll(".col-fbtn").forEach((btn) => {
@@ -536,6 +623,86 @@ function renderHead() {
       toggleColPop(btn.dataset.fkey, btn);
     });
   });
+  const xbtn = $("t-expand-all");
+  xbtn.addEventListener("click", () => {
+    const ecrRows = filteredRows();
+    // decide from live state, never from the (possibly stale) rendered
+    // button — a pending view transition can lag the DOM by a frame
+    const { keep, expand } = colFilterSets(ecrRows);
+    const ids = allExpandableIds(ecrRows, keep);
+    const eff = effExpandedSet(ecrRows);
+    expand.forEach((id) => eff.add(id));
+    const anyCollapsed = [...ids].some((id) => !eff.has(id));
+    if (anyCollapsed) {
+      ids.forEach((id) => state.expanded.add(id));
+      state.suppressed.clear();
+    } else {
+      state.expanded.clear();
+      state.suppressed.clear();
+      // a text filter's hit chains re-expand as the #29 overlay demands
+    }
+    morphRender(() => renderBody(ecrRows));
+  });
+  bindHeadDrag();
+}
+
+/* drag-to-reorder for data-column headers (HTML5 DnD): an accent edge marks
+   the insertion side; dropping on the pinned chev/detail cells clamps to the
+   first/last data position. renderHead re-runs the binder with fresh nodes */
+function bindHeadDrag() {
+  const head = $("t-thead");
+  let dragKey = null;
+  const clearHints = () => head.querySelectorAll(".drop-before,.drop-after")
+    .forEach((t) => t.classList.remove("drop-before", "drop-after"));
+  head.querySelectorAll("th[data-col]:not([data-col='chev']):not([data-col='detail'])").forEach((th) => {
+    th.addEventListener("dragstart", (ev) => {
+      dragKey = th.dataset.col;
+      th.classList.add("dragging");
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", dragKey);
+    });
+    th.addEventListener("dragend", () => {
+      dragKey = null;
+      clearHints();
+      head.querySelectorAll(".dragging").forEach((t) => t.classList.remove("dragging"));
+    });
+  });
+  head.querySelectorAll("th[data-col]").forEach((th) => {
+    th.addEventListener("dragover", (ev) => {
+      if (!dragKey) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      const rect = th.getBoundingClientRect();
+      const after = th.dataset.col === "detail" || ev.clientX > rect.left + rect.width / 2;
+      clearHints();
+      th.classList.add(after ? "drop-after" : "drop-before");
+    });
+    th.addEventListener("dragleave", (ev) => {
+      if (!th.contains(ev.relatedTarget)) th.classList.remove("drop-before", "drop-after");
+    });
+    th.addEventListener("drop", (ev) => {
+      if (!dragKey) return;
+      ev.preventDefault();
+      const after = th.classList.contains("drop-after");
+      clearHints();
+      reorderColumn(dragKey, th.dataset.col, after);
+      dragKey = null;
+    });
+  });
+}
+
+function reorderColumn(dragKey, targetKey, after) {
+  if (dragKey === targetKey) return;
+  const data = colOrder.filter((k) => k !== "chev" && k !== "detail" && k !== dragKey);
+  let to;
+  if (targetKey === "chev") to = 0;
+  else if (targetKey === "detail") to = data.length;
+  else to = data.indexOf(targetKey) + (after ? 1 : 0);
+  data.splice(to, 0, dragKey);
+  colOrder = ["chev", ...data, "detail"];
+  renderHead();
+  renderBody(filteredRows());
+  buildColsMenu();
 }
 
 /* t-filter scope: ECR id/summary hit, or any nested WI/Action id/summary hit */
@@ -567,7 +734,7 @@ function renderBody(ecrRows) {
   const rows = flattenRows(ecrRows, expansion, keep);
   $("t-tbody").innerHTML = rows.length
     ? rows.map((r) => trHTML(r, r.expandable && expansion.has(r.id), hit(r))).join("")
-    : `<tr class="t-empty"><td colspan="${COLS.length}">${
+    : `<tr class="t-empty"><td colspan="${orderedCols().length}">${
         colFiltersActive() ? "No rows match the active column filters" : "No ECRs match the current filter"}</td></tr>`;
 
   // footer counts reflect what column filters leave visible (ECR rows only,
@@ -578,6 +745,7 @@ function renderBody(ecrRows) {
   $("t-sum-p").textContent = fmt(visEcrs.reduce((s, e) => s + (e.effort || 0), 0));
   $("t-sum-a").textContent = fmt(visEcrs.reduce((s, e) => s + (e.actual || 0), 0));
   applyCols();
+  syncExpandAll(ecrRows, expansion, keep);
   syncClearBtn();
 }
 
@@ -598,12 +766,13 @@ $("t-tbody").addEventListener("click", (ev) => {
   } else {
     state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id);
   }
-  renderBody(filteredRows());
+  morphRender(() => renderBody(filteredRows()));
 });
 
 function applyCols() {
-  // the last visible data column carries the right edge rail
-  const visKeys = COLS.filter((c) => c.key !== "chev" && c.key !== "detail" && !state.hidden.has(c.key)).map((c) => c.key);
+  // the last visible data column carries the right edge rail (DOM order =
+  // orderedCols order, so it follows drag-reordering too)
+  const visKeys = orderedCols().filter((c) => c.key !== "chev" && c.key !== "detail" && !state.hidden.has(c.key)).map((c) => c.key);
   const lastKey = visKeys[visKeys.length - 1];
   document.querySelectorAll("#t-tbl [data-col]").forEach((el) => {
     el.style.display = state.hidden.has(el.dataset.col) ? "none" : "";
@@ -611,10 +780,11 @@ function applyCols() {
   });
 }
 
-/* columns dropdown: every data column is toggleable; unchecked = hidden */
-(function initCols() {
+/* columns dropdown: every data column is toggleable; unchecked = hidden.
+   Rebuilt (in the current drag order) whenever columns get reordered. */
+function buildColsMenu() {
   const pop = $("t-cols-pop");
-  pop.innerHTML = COLS.filter((c) => c.key !== "chev" && c.key !== "detail").map((c) => `
+  pop.innerHTML = orderedCols().filter((c) => c.key !== "chev" && c.key !== "detail").map((c) => `
     <label><input type="checkbox" data-col="${c.key}" ${state.hidden.has(c.key) ? "" : "checked"}> ${c.label}</label>`).join("");
   pop.querySelectorAll("input").forEach((cb) => {
     cb.addEventListener("change", () => {
@@ -622,6 +792,10 @@ function applyCols() {
       applyCols();
     });
   });
+}
+(function initCols() {
+  buildColsMenu();
+  const pop = $("t-cols-pop");
   const btn = $("t-cols-btn");
   pop.addEventListener("click", (ev) => ev.stopPropagation());
   btn.addEventListener("click", (ev) => {
@@ -1623,7 +1797,7 @@ const XlsxExport = (() => {
     const markAll = (n) => { if (n.expandable) expandAll.add(n.id); n.kids.forEach(markAll); };
     ecrRows.forEach((e) => markAll(normEcr(e, 0)));
     const flat = flattenRows(ecrRows, expandAll, keep);
-    const cols = COLS.filter((c) => c.key !== "chev" && c.key !== "detail" && !state.hidden.has(c.key));
+    const cols = orderedCols().filter((c) => c.key !== "chev" && c.key !== "detail" && !state.hidden.has(c.key));
     const rows = flat.map((r) => ({
       depth: r.depth, expandable: r.expandable,
       cells: cols.map((c) => exportCell(c, r)),

@@ -131,7 +131,15 @@ PTC 客户端（`im` 在 PATH）+ 内网 + 已缓存凭据；GenerateDashboard /
    带 outline 层级。
 10. **overdue**：表格 Overdue 列与抽屉徽标均为前端自算（`planned_completion_date <
     generated_at` 且 OPEN；Action 恒空）；DB overdue_* 列不参与。
-11. **视图往返** Home/Graph 各自状态持久；print 自动回退 Home；断网 / file:// 双击可用
+11. **排序/展开动效（#42）**：点表头排序、行展开/收起、全部展开/收起时存活行平滑滑到新位置
+    （进/出行直接出现）；`prefers-reduced-motion` 下无动效直接跳变。
+12. **列拖拽重排（#43）**：拖任意数据列表头到新位置（accent 指示线跟随）；chev 恒首位、
+    detail 恒末位（拖到其上钳制到首/末数据位）；表头 / 表体 / Columns 菜单 / edge 尾列 /
+    Excel 导出列序全部一致；拖拽中源表头半透明；漏斗按钮与排序点击不受拖拽影响。
+13. **表头展开收起钮（#44）**：chevron 表头按钮一次点击全展开（10 → 166 行，含共享 WI 的
+    重复行；Build 不进表格）、再点收起回 10 行；图标/aria-label 随下一个动作切换；过滤激活时
+    只作用于过滤可见集；无可展开行时禁用。
+14. **视图往返** Home/Graph 各自状态持久；print 自动回退 Home；断网 / file:// 双击可用
     （0 外部请求）。
 
 ### 4.2 Graph 手测清单（原型 2026-10-07/08 实测通过；适配产物同口径适用）

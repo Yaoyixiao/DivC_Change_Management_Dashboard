@@ -742,3 +742,22 @@ body[data-view="graph"] #graph-view{display:block}
   border:none;border-radius:8px;padding:7px 14px;cursor:pointer}
 .opener-modal-close:hover{filter:brightness(.94)}
 #t-tbl .t-id{cursor:pointer}
+
+/* ---------- table row morph (sort / expansion reorder, VT) ----------
+   Rows carry unique view-transition names (set inline per row); suppressing
+   the root crossfade keeps the swap crisp so ONLY the named rows glide —
+   same trick as Reference/Sort Morph_CSS.txt */
+::view-transition-old(root),::view-transition-new(root){animation:none}
+
+/* ---------- header: expand-all control + drag-to-reorder ---------- */
+#t-thead th[draggable="true"]{cursor:grab}
+#t-thead th.dragging{opacity:.45}
+#t-thead th.drop-before{box-shadow:inset 2px 0 0 var(--accent)}
+#t-thead th.drop-after{box-shadow:inset -2px 0 0 var(--accent)}
+.t-expand-all{display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;padding:0;border:none;border-radius:7px;
+  background:transparent;color:var(--mut);cursor:pointer}
+.t-expand-all:hover:not(:disabled){background:var(--fog);color:var(--ink)}
+.t-expand-all:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.t-expand-all:disabled{opacity:.35;cursor:default}
+.t-expand-all svg{width:15px;height:15px}
